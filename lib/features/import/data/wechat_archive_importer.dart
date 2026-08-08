@@ -248,7 +248,7 @@ class WechatMessageNormalizer {
     return 'wechat:$sessionId:hash:$digest';
   }
 
-  _PreparedMessage normalize({
+  _PreparedMessage _normalize({
     required Map<String, dynamic> message,
     required String archiveRoot,
     required Set<String> archivePaths,
@@ -340,7 +340,7 @@ Future<Map<String, dynamic>> _prepareWechatArchivePayload(
     var missingMediaCount = 0;
 
     for (final message in exportArchive.messages) {
-      final prepared = normalizer.normalize(
+      final prepared = normalizer._normalize(
         message: message,
         archiveRoot: archiveRoot,
         archivePaths: archivePaths,

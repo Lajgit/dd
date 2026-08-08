@@ -8,6 +8,7 @@ import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 
 import '../../../core/database/app_database.dart';
+import 'archive_media_store.dart';
 import 'messages_js_parser.dart';
 
 class WechatArchiveImportResult {
@@ -18,6 +19,9 @@ class WechatArchiveImportResult {
     required this.existingMessageCount,
     required this.participantCount,
     required this.mediaReferenceCount,
+    required this.storedMediaReferenceCount,
+    required this.uniqueMediaCount,
+    required this.newlyStoredMediaCount,
     required this.missingMediaCount,
     required this.isDuplicateSource,
   });
@@ -28,6 +32,9 @@ class WechatArchiveImportResult {
   final int existingMessageCount;
   final int participantCount;
   final int mediaReferenceCount;
+  final int storedMediaReferenceCount;
+  final int uniqueMediaCount;
+  final int newlyStoredMediaCount;
   final int missingMediaCount;
   final bool isDuplicateSource;
 }
@@ -59,38 +66,32 @@ class WechatArchiveImporter {
       whereArgs: <Object?>[payload.sourceFingerprint],
       limit: 1,
     );
-    if (duplicateSource.isNotEmpty) {
-      return WechatArchiveImportResult(
-        archiveName: payload.archiveName,
-        archiveMessageCount: payload.messages.length,
-        insertedMessageCount: 0,
-        existingMessageCount: payload.messages.length,
-        participantCount: payload.participants.length,
-        mediaReferenceCount: payload.mediaReferenceCount,
-        missingMediaCount: payload.missingMediaCount,
-        isDuplicateSource: true,
-      );
-    }
+    final isDuplicateSource = duplicateSource.isNotEmpty;
 
     return db.transaction((transaction) async {
       final now = DateTime.now().millisecondsSinceEpoch;
-      final sourceId = await transaction.insert(
-        'import_sources',
-        <String, Object?>{
-          'source_type': 'wechat_explorer_zip',
-          'source_fingerprint': payload.sourceFingerprint,
-          'source_file_name': payload.sourceFileName,
-          'archive_name': payload.archiveName,
-          'archive_version': payload.archiveVersion,
-          'messages_js_path': payload.messagesJsPath,
-          'raw_messages_path': payload.rawMessagesPath,
-          'archive_message_count': payload.messages.length,
-          'inserted_message_count': 0,
-          'media_reference_count': payload.mediaReferenceCount,
-          'missing_media_count': payload.missingMediaCount,
-          'imported_at': now,
-        },
-      );
+      late final int sourceId;
+      if (isDuplicateSource) {
+        sourceId = duplicateSource.single['id']! as int;
+      } else {
+        sourceId = await transaction.insert(
+          'import_sources',
+          <String, Object?>{
+            'source_type': 'wechat_explorer_zip',
+            'source_fingerprint': payload.sourceFingerprint,
+            'source_file_name': payload.sourceFileName,
+            'archive_name': payload.archiveName,
+            'archive_version': payload.archiveVersion,
+            'messages_js_path': payload.messagesJsPath,
+            'raw_messages_path': payload.rawMessagesPath,
+            'archive_message_count': payload.messages.length,
+            'inserted_message_count': 0,
+            'media_reference_count': payload.mediaReferenceCount,
+            'missing_media_count': payload.missingMediaCount,
+            'imported_at': now,
+          },
+        );
+      }
 
       final participantIds = <String, int>{};
       for (final participant in payload.participants) {
@@ -175,34 +176,99 @@ class WechatArchiveImporter {
           insertedMessageCount += 1;
         }
 
+        int? mediaId;
+        final mediaSha256 = message.mediaSha256;
+        if (mediaSha256 != null &&
+            message.mediaLocalPath != null &&
+            message.mediaByteSize != null) {
+          await transaction.insert(
+            'media',
+            <String, Object?>{
+              'sha256': mediaSha256,
+              'local_path': message.mediaLocalPath,
+              'byte_size': message.mediaByteSize,
+              'media_type': message.mediaType,
+              'display_name': message.mediaName,
+              'created_at': now,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+          final mediaRows = await transaction.query(
+            'media',
+            columns: const <String>['id'],
+            where: 'sha256 = ?',
+            whereArgs: <Object?>[mediaSha256],
+            limit: 1,
+          );
+          mediaId = mediaRows.single['id']! as int;
+
+          final mediaUpdates = <String, Object?>{
+            'local_path': message.mediaLocalPath,
+            'byte_size': message.mediaByteSize,
+          };
+          if (message.mediaType != null) {
+            mediaUpdates['media_type'] = message.mediaType;
+          }
+          if (message.mediaName != null) {
+            mediaUpdates['display_name'] = message.mediaName;
+          }
+          await transaction.update(
+            'media',
+            mediaUpdates,
+            where: 'id = ?',
+            whereArgs: <Object?>[mediaId],
+          );
+        }
+
         final archivePath = message.mediaArchivePath;
         if (archivePath == null) {
           continue;
         }
 
+        final status = mediaId != null
+            ? 'stored'
+            : message.mediaAvailable
+                ? 'available_in_archive'
+                : 'missing_in_archive';
+        final messageMediaValues = <String, Object?>{
+          'message_id': messageId,
+          'source_id': sourceId,
+          'media_id': mediaId,
+          'archive_path': archivePath,
+          'media_type': message.mediaType,
+          'display_name': message.mediaName,
+          'status': status,
+          'media_error': message.mediaError,
+        };
         await transaction.insert(
           'message_media',
+          messageMediaValues,
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        await transaction.update(
+          'message_media',
           <String, Object?>{
-            'message_id': messageId,
-            'source_id': sourceId,
-            'media_id': null,
-            'archive_path': archivePath,
+            'media_id': mediaId,
             'media_type': message.mediaType,
             'display_name': message.mediaName,
-            'status': message.mediaAvailable
-                ? 'available_in_archive'
-                : 'missing_in_archive',
+            'status': status,
             'media_error': message.mediaError,
           },
-          conflictAlgorithm: ConflictAlgorithm.ignore,
+          where: 'message_id = ? AND source_id = ? AND archive_path = ?',
+          whereArgs: <Object?>[messageId, sourceId, archivePath],
         );
       }
 
+      final sourceUpdates = <String, Object?>{
+        'media_reference_count': payload.mediaReferenceCount,
+        'missing_media_count': payload.missingMediaCount,
+      };
+      if (!isDuplicateSource) {
+        sourceUpdates['inserted_message_count'] = insertedMessageCount;
+      }
       await transaction.update(
         'import_sources',
-        <String, Object?>{
-          'inserted_message_count': insertedMessageCount,
-        },
+        sourceUpdates,
         where: 'id = ?',
         whereArgs: <Object?>[sourceId],
       );
@@ -214,8 +280,11 @@ class WechatArchiveImporter {
         existingMessageCount: existingMessageCount,
         participantCount: payload.participants.length,
         mediaReferenceCount: payload.mediaReferenceCount,
+        storedMediaReferenceCount: payload.storedMediaReferenceCount,
+        uniqueMediaCount: payload.uniqueMediaCount,
+        newlyStoredMediaCount: payload.newlyStoredMediaCount,
         missingMediaCount: payload.missingMediaCount,
-        isDuplicateSource: false,
+        isDuplicateSource: isDuplicateSource,
       );
     });
   }
@@ -296,8 +365,13 @@ Future<Map<String, dynamic>> _prepareWechatArchivePayload(
 
   try {
     final archive = ZipDecoder().decodeStream(input);
-    final candidates = archive
-        .where((entry) => entry.isFile && _isMessagesJsPath(entry.name))
+    final archiveFiles = <String, ArchiveFile>{};
+    for (final entry in archive.where((entry) => entry.isFile)) {
+      archiveFiles[_normalizeArchivePath(entry.name)] = entry;
+    }
+
+    final candidates = archiveFiles.entries
+        .where((entry) => _isMessagesJsPath(entry.key))
         .toList(growable: false);
     if (candidates.isEmpty) {
       throw const FormatException('ZIP 中未找到 data/messages.js');
@@ -306,7 +380,8 @@ Future<Map<String, dynamic>> _prepareWechatArchivePayload(
       throw const FormatException('ZIP 中发现多个 data/messages.js，请一次只导入一个聊天档案');
     }
 
-    final messagesFile = candidates.single;
+    final messagesJsPath = candidates.single.key;
+    final messagesFile = candidates.single.value;
     final bytes = messagesFile.readBytes();
     if (bytes == null || bytes.isEmpty) {
       throw const FormatException('data/messages.js 为空');
@@ -326,12 +401,8 @@ Future<Map<String, dynamic>> _prepareWechatArchivePayload(
     }
 
     final exportArchive = const MessagesJsParser().parse(utf8.decode(bytes));
-    final messagesJsPath = _normalizeArchivePath(messagesFile.name);
     final archiveRoot = _archiveRoot(messagesJsPath);
-    final archivePaths = archive
-        .where((entry) => entry.isFile)
-        .map((entry) => _normalizeArchivePath(entry.name))
-        .toSet();
+    final archivePaths = archiveFiles.keys.toSet();
 
     const normalizer = WechatMessageNormalizer();
     final preparedMessages = <_PreparedMessage>[];
@@ -365,6 +436,49 @@ Future<Map<String, dynamic>> _prepareWechatArchivePayload(
       }
     }
 
+    const mediaStore = ArchiveMediaStore();
+    final storedByArchivePath = <String, StoredArchiveMedia>{};
+    var newlyStoredMediaCount = 0;
+    for (final message in preparedMessages) {
+      final archivePath = message.mediaArchivePath;
+      if (archivePath == null ||
+          !message.mediaAvailable ||
+          storedByArchivePath.containsKey(archivePath)) {
+        continue;
+      }
+      final archiveFile = archiveFiles[archivePath];
+      if (archiveFile == null) {
+        continue;
+      }
+
+      final stored = await mediaStore.store(
+        archiveFile: archiveFile,
+        storageRoot: storageRoot,
+      );
+      storedByArchivePath[archivePath] = stored;
+      if (!stored.wasAlreadyStored) {
+        newlyStoredMediaCount += 1;
+      }
+    }
+
+    final messagesWithMedia = preparedMessages
+        .map(
+          (message) => message._withStoredMedia(
+            message.mediaArchivePath == null
+                ? null
+                : storedByArchivePath[message.mediaArchivePath!],
+          ),
+        )
+        .toList(growable: false);
+    final storedMediaReferenceCount = messagesWithMedia
+        .where((message) => message.mediaSha256 != null)
+        .length;
+    final uniqueMediaCount = messagesWithMedia
+        .map((message) => message.mediaSha256)
+        .whereType<String>()
+        .toSet()
+        .length;
+
     return <String, dynamic>{
       'sourceFingerprint': sourceFingerprint,
       'sourceFileName': path.basename(zipPath),
@@ -372,11 +486,14 @@ Future<Map<String, dynamic>> _prepareWechatArchivePayload(
       'archiveVersion': exportArchive.version,
       'messagesJsPath': messagesJsPath,
       'rawMessagesPath': rawMessagesPath,
-      'messages': preparedMessages.map((message) => message.toJson()).toList(),
+      'messages': messagesWithMedia.map((message) => message.toJson()).toList(),
       'participants': participants.values
           .map((participant) => participant.toJson())
           .toList(),
       'mediaReferenceCount': mediaReferenceCount,
+      'storedMediaReferenceCount': storedMediaReferenceCount,
+      'uniqueMediaCount': uniqueMediaCount,
+      'newlyStoredMediaCount': newlyStoredMediaCount,
       'missingMediaCount': missingMediaCount,
     };
   } finally {
@@ -394,6 +511,9 @@ class _PreparedWechatArchive {
     required this.messages,
     required this.participants,
     required this.mediaReferenceCount,
+    required this.storedMediaReferenceCount,
+    required this.uniqueMediaCount,
+    required this.newlyStoredMediaCount,
     required this.missingMediaCount,
     this.archiveVersion,
   });
@@ -407,6 +527,9 @@ class _PreparedWechatArchive {
   final List<_PreparedMessage> messages;
   final List<_PreparedParticipant> participants;
   final int mediaReferenceCount;
+  final int storedMediaReferenceCount;
+  final int uniqueMediaCount;
+  final int newlyStoredMediaCount;
   final int missingMediaCount;
 
   factory _PreparedWechatArchive.fromJson(Map<String, dynamic> json) {
@@ -428,6 +551,9 @@ class _PreparedWechatArchive {
               ))
           .toList(growable: false),
       mediaReferenceCount: json['mediaReferenceCount']! as int,
+      storedMediaReferenceCount: json['storedMediaReferenceCount']! as int,
+      uniqueMediaCount: json['uniqueMediaCount']! as int,
+      newlyStoredMediaCount: json['newlyStoredMediaCount']! as int,
       missingMediaCount: json['missingMediaCount']! as int,
     );
   }
@@ -479,6 +605,9 @@ class _PreparedMessage {
     this.mediaType,
     this.mediaName,
     this.mediaError,
+    this.mediaSha256,
+    this.mediaLocalPath,
+    this.mediaByteSize,
   });
 
   final String sourceMessageKey;
@@ -499,6 +628,38 @@ class _PreparedMessage {
   final String? mediaName;
   final String? mediaError;
   final bool mediaAvailable;
+  final String? mediaSha256;
+  final String? mediaLocalPath;
+  final int? mediaByteSize;
+
+  _PreparedMessage _withStoredMedia(StoredArchiveMedia? stored) {
+    if (stored == null) {
+      return this;
+    }
+    return _PreparedMessage(
+      sourceMessageKey: sourceMessageKey,
+      sourceRowId: sourceRowId,
+      localId: localId,
+      serverId: serverId,
+      sessionId: sessionId,
+      senderId: senderId,
+      senderName: senderName,
+      isSender: isSender,
+      messageType: messageType,
+      content: content,
+      createTime: createTime,
+      datetimeText: datetimeText,
+      contentDataJson: contentDataJson,
+      mediaArchivePath: mediaArchivePath,
+      mediaType: mediaType,
+      mediaName: mediaName,
+      mediaError: mediaError,
+      mediaAvailable: mediaAvailable,
+      mediaSha256: stored.sha256,
+      mediaLocalPath: stored.localPath,
+      mediaByteSize: stored.byteSize,
+    );
+  }
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'sourceMessageKey': sourceMessageKey,
@@ -519,6 +680,9 @@ class _PreparedMessage {
         'mediaName': mediaName,
         'mediaError': mediaError,
         'mediaAvailable': mediaAvailable,
+        'mediaSha256': mediaSha256,
+        'mediaLocalPath': mediaLocalPath,
+        'mediaByteSize': mediaByteSize,
       };
 
   factory _PreparedMessage.fromJson(Map<String, dynamic> json) {
@@ -541,6 +705,9 @@ class _PreparedMessage {
       mediaName: json['mediaName'] as String?,
       mediaError: json['mediaError'] as String?,
       mediaAvailable: json['mediaAvailable']! as bool,
+      mediaSha256: json['mediaSha256'] as String?,
+      mediaLocalPath: json['mediaLocalPath'] as String?,
+      mediaByteSize: json['mediaByteSize'] as int?,
     );
   }
 }

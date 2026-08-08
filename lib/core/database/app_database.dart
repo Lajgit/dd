@@ -4,14 +4,14 @@ import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 
 class AppDatabase {
-  AppDatabase._();
+  const AppDatabase._();
 
-  static final AppDatabase instance = AppDatabase._();
+  static const AppDatabase instance = AppDatabase._();
 
   static const _databaseName = 'diandi_memory.db';
   static const _databaseVersion = 1;
 
-  Database? _database;
+  static Database? _database;
 
   Future<Database> get database async {
     return _database ??= await _openDatabase();

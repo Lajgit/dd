@@ -38,6 +38,11 @@ $script:FlutterCommand = Resolve-FlutterCommand
 Write-Host "Using Flutter: $script:FlutterCommand"
 
 Invoke-Flutter @("--version")
+
+# Clear generated plugin/build state before regenerating the Android project.
+# This avoids stale plugin registrants after dependency changes.
+Invoke-Flutter @("clean")
+
 Invoke-Flutter @(
     "create",
     ".",

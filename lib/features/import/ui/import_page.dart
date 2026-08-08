@@ -1,4 +1,4 @@
-import 'package:file_selector/file_selector.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../data/wechat_archive_scanner.dart';
@@ -22,17 +22,15 @@ class _ImportPageState extends State<ImportPage> {
   Future<void> _pickArchive() async {
     if (_isScanning) return;
 
-    const zipTypeGroup = XTypeGroup(
-      label: 'ZIP archive',
-      extensions: <String>['zip'],
-    );
-    final selected = await openFile(
-      acceptedTypeGroups: const <XTypeGroup>[zipTypeGroup],
+    // 只获取文件路径，不把大型 ZIP 的全部字节加载到 Android 平台通道内存中。
+    final selected = await FilePicker.pickFile(
+      type: FileType.custom,
+      allowedExtensions: const ['zip'],
     );
     if (selected == null) return;
 
-    final path = selected.path.trim();
-    if (path.isEmpty) {
+    final path = selected.path;
+    if (path == null || path.trim().isEmpty) {
       setState(() {
         _error = '无法获取该 ZIP 的本地路径，请先将档案保存到手机后再选择。';
         _summary = null;

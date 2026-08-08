@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../data/wechat_archive_importer.dart';
 import '../data/wechat_archive_scanner.dart';
 import '../model/wechat_archive_models.dart';
 
@@ -13,14 +14,18 @@ class ImportPage extends StatefulWidget {
 
 class _ImportPageState extends State<ImportPage> {
   final WechatArchiveScanner _scanner = const WechatArchiveScanner();
+  final WechatArchiveImporter _importer = const WechatArchiveImporter();
 
   WechatArchiveSummary? _summary;
+  WechatArchiveImportResult? _importResult;
   String? _selectedFileName;
+  String? _selectedZipPath;
   String? _error;
   bool _isScanning = false;
+  bool _isImporting = false;
 
   Future<void> _pickArchive() async {
-    if (_isScanning) return;
+    if (_isScanning || _isImporting) return;
 
     // 只获取文件路径，不把大型 ZIP 的全部字节加载到 Android 平台通道内存中。
     final selected = await FilePicker.pickFile(
@@ -34,6 +39,8 @@ class _ImportPageState extends State<ImportPage> {
       setState(() {
         _error = '无法获取该 ZIP 的本地路径，请先将档案保存到手机后再选择。';
         _summary = null;
+        _importResult = null;
+        _selectedZipPath = null;
         _selectedFileName = selected.name;
       });
       return;
@@ -43,6 +50,8 @@ class _ImportPageState extends State<ImportPage> {
       _isScanning = true;
       _error = null;
       _summary = null;
+      _importResult = null;
+      _selectedZipPath = path;
       _selectedFileName = selected.name;
     });
 
@@ -61,6 +70,31 @@ class _ImportPageState extends State<ImportPage> {
     }
   }
 
+  Future<void> _importArchive() async {
+    final zipPath = _selectedZipPath;
+    if (zipPath == null || _summary == null || _isImporting) return;
+
+    setState(() {
+      _isImporting = true;
+      _error = null;
+      _importResult = null;
+    });
+
+    try {
+      final result = await _importer.importZip(zipPath);
+      if (!mounted) return;
+      setState(() => _importResult = result);
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.message.toString());
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = '写入本地数据库失败：$error');
+    } finally {
+      if (mounted) setState(() => _isImporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -75,11 +109,11 @@ class _ImportPageState extends State<ImportPage> {
             ),
             const SizedBox(height: 8),
             const Text(
-              '直接选择 WechatExplorer 的完整 HTML 档案 ZIP。App 会查找 data/messages.js，并核对图片、视频、语音和文件资源是否存在。',
+              '先验证完整 HTML 档案 ZIP，再将消息写入本地 SQLite。原始 messages.js 会保存在 App 私有目录，完整聊天内容不会上传。',
             ),
             const SizedBox(height: 20),
             FilledButton.icon(
-              onPressed: _isScanning ? null : _pickArchive,
+              onPressed: _isScanning || _isImporting ? null : _pickArchive,
               icon: const Icon(Icons.folder_zip_outlined),
               label: Text(_isScanning ? '正在扫描…' : '选择 ZIP 文件'),
             ),
@@ -91,12 +125,14 @@ class _ImportPageState extends State<ImportPage> {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
-            if (_isScanning) ...[
+            if (_isScanning || _isImporting) ...[
               const SizedBox(height: 24),
               const LinearProgressIndicator(),
               const SizedBox(height: 8),
-              const Text(
-                '大型档案会在后台解析，不会一次性把全部媒体读入内存。',
+              Text(
+                _isImporting
+                    ? '正在解析消息并写入本地数据库…'
+                    : '大型档案会在后台解析，不会一次性把全部媒体读入内存。',
                 textAlign: TextAlign.center,
               ),
             ],
@@ -107,6 +143,21 @@ class _ImportPageState extends State<ImportPage> {
             if (_summary != null) ...[
               const SizedBox(height: 24),
               _SummaryCard(summary: _summary!),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _isImporting ? null : _importArchive,
+                icon: const Icon(Icons.save_alt),
+                label: Text(_isImporting ? '正在导入…' : '导入到本地数据库'),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '当前阶段写入消息、参与者和媒体引用元数据；媒体文件复制与 SHA-256 去重放在下一小阶段。',
+                textAlign: TextAlign.center,
+              ),
+            ],
+            if (_importResult != null) ...[
+              const SizedBox(height: 24),
+              _ImportResultCard(result: _importResult!),
             ],
           ],
         ),
@@ -181,6 +232,73 @@ class _SummaryCard extends StatelessWidget {
     final month = date.month.toString().padLeft(2, '0');
     final day = date.day.toString().padLeft(2, '0');
     return '${date.year}-$month-$day';
+  }
+}
+
+class _ImportResultCard extends StatelessWidget {
+  const _ImportResultCard({required this.result});
+
+  final WechatArchiveImportResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.storage_outlined),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    result.isDuplicateSource ? '该档案已导入' : '本地导入完成',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _DetailRow(label: '聊天', value: result.archiveName),
+            _DetailRow(
+              label: '档案消息',
+              value: '${result.archiveMessageCount} 条',
+            ),
+            _DetailRow(
+              label: '新增消息',
+              value: '${result.insertedMessageCount} 条',
+            ),
+            _DetailRow(
+              label: '已存在',
+              value: '${result.existingMessageCount} 条',
+            ),
+            _DetailRow(
+              label: '参与者',
+              value: '${result.participantCount} 个',
+            ),
+            _DetailRow(
+              label: '媒体引用',
+              value: '${result.mediaReferenceCount} 个',
+            ),
+            if (result.missingMediaCount > 0)
+              _DetailRow(
+                label: '缺失资源',
+                value: '${result.missingMediaCount} 个',
+                warning: true,
+              ),
+            const SizedBox(height: 8),
+            Text(
+              result.isDuplicateSource
+                  ? '来源指纹已存在，因此没有重复写入消息。'
+                  : '原始 messages.js 已保存在 App 私有目录，可用于后续重新构建规范化数据。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

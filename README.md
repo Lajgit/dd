@@ -18,26 +18,47 @@ Flutter Android V1。当前第一阶段直接读取 WechatExplorer 导出的完�
 
 V1 只在本地处理聊天档案。完整聊天、图片、视频、语音和文件不上传。后续 AI 功能只发送用户主动触发分析时所需的文本片段。
 
-## 本地启动
+## Windows 首次环境准备
 
-仓库暂不提交 Flutter 自动生成的 Android 平台模板。首次克隆后，在 Windows PowerShell 执行：
+如果 `flutter doctor` 提示找不到 `flutter`，先在仓库根目录执行：
 
 ```powershell
-.\tool\bootstrap_android.ps1
+powershell -ExecutionPolicy Bypass -File .\tool\install_flutter_windows.ps1
 ```
 
-脚本等价于：
+该脚本会：
+
+- 使用现有 Git 安装 Flutter stable 到 `%LOCALAPPDATA%\Programs\flutter`；
+- 将 Flutter `bin` 加入当前用户 PATH；
+- 执行 `flutter --version` 和 `flutter doctor`。
+
+完成后关闭并重新打开 PowerShell，再进入仓库目录。
+
+如果 `flutter doctor` 提示 Android toolchain 缺失，再安装 Android Studio / Android SDK，并按 `flutter doctor` 的具体提示补齐环境；不要跳过 doctor 的错误项。
+
+## 本地构建
+
+仓库暂不提交 Flutter 自动生成的 Android 平台模板。环境准备完成后，在仓库根目录执行：
 
 ```powershell
-flutter create . `
-  --platforms=android `
-  --project-name=diandi_memory `
-  --org=com.lajgit
+powershell -ExecutionPolicy Bypass -File .\tool\bootstrap_android.ps1
+```
 
+脚本会依次执行：
+
+```powershell
+flutter --version
+flutter create . --platforms=android --project-name=diandi_memory --org=com.lajgit
 flutter pub get
 flutter analyze
 flutter test
 flutter build apk --debug
+```
+
+成功后 APK 位于：
+
+```text
+build\app\outputs\flutter-apk\app-debug.apk
 ```
 
 GitHub Actions 也会使用同一流程生成 Android 平台文件并执行 analyze、test 和 debug APK 构建。

@@ -22,7 +22,7 @@ class _ImportPageState extends State<ImportPage> {
   Future<void> _pickArchive() async {
     if (_isScanning) return;
 
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['zip'],
       allowMultiple: false,

@@ -1,6 +1,6 @@
 # 点滴记忆
 
-Flutter Android V1。当前直接读取 WechatExplorer 导出的完整 HTML 档案 ZIP，不经过额外 PC 转换器。
+Flutter Android V1。App 直接读取 WechatExplorer 导出的完整 HTML 档案 ZIP，不经过额外 PC 转换器。
 
 ## 当前能力
 
@@ -8,14 +8,15 @@ Flutter Android V1。当前直接读取 WechatExplorer 导出的完整 HTML 档�
 
 1. 在 ZIP 任意顶层目录中查找 `data/messages.js`；
 2. 解析 `window.__WECHAT_EXPORT__ = {...};`；
-3. 统计消息、图片、视频、语音、表情和文件数量；
-4. 根据 `exportMediaUrl` / `voiceDataUrl` 核对 ZIP 内实际媒体资源；
-5. 在 UI 中显示档案名称、时间范围和资源缺失情况；
-6. 用户确认后将导入来源、参与者、消息和媒体引用元数据写入本地 SQLite；
-7. 将原始 `messages.js` 保存在 App 私有目录，保留重新构建规范化数据的依据；
-8. 使用 `sessionId + serverId`，其次 `localId / id / 稳定哈希` 生成消息唯一键，避免重复导入同一消息。
+3. 核对图片、视频、语音、表情和文件资源；
+4. 将参与者、消息和媒体引用写入本地 SQLite；
+5. 保留原始 `messages.js`，便于以后重新构建规范化数据；
+6. 将可用媒体流式解压到 App 私有目录，并按内容计算 SHA-256；
+7. 相同 SHA-256 的媒体只保留一个本地文件；
+8. 按天生成本地统计小结，小结展开后直接读取 SQLite 中的真实聊天记录；
+9. 已保存的图片/表情可在聊天证据中直接预览。
 
-当前阶段**还不会复制全部媒体文件**。媒体私有化复制和 SHA-256 内容去重放到下一小阶段，避免一次扩大改动范围。
+当前“每日小结”是完全本地的统计型总结，不调用 AI。后续事件提取与 AI 日/周/月/年总结会建立在已验证的本地消息与证据链之上。
 
 ## 本地数据库
 
@@ -24,8 +25,8 @@ SQLite schema v1 包含：
 - `import_sources`：每次 WechatExplorer 来源、来源指纹、原始 `messages.js` 路径和导入统计；
 - `participants`：微信发送者 ID、显示名称和是否本人；
 - `messages`：稳定消息键、微信原始 ID、发送者、类型、正文、时间和 `contentData`；
-- `media`：预留 SHA-256 内容对象，下一阶段复制媒体后写入；
-- `message_media`：消息与 ZIP 内媒体引用的关系以及资源存在状态。
+- `media`：按 SHA-256 去重后的 App 私有媒体文件；
+- `message_media`：消息、来源与媒体之间的证据关系和本地保存状态。
 
 规范化表不会重复保存头像 Base64；完整原始数据保留在私有 `messages.js` 文件中。
 
@@ -41,28 +42,19 @@ V1 只在本地处理聊天档案。完整聊天、图片、视频、语音和�
 powershell -ExecutionPolicy Bypass -File .\tool\install_flutter_windows.ps1
 ```
 
-该脚本会：
-
-- 使用现有 Git 安装 Flutter stable 到 `%LOCALAPPDATA%\Programs\flutter`；
-- 将 Flutter `bin` 加入当前用户 PATH；
-- 执行 `flutter --version` 和 `flutter doctor`。
-
-完成后关闭并重新打开 PowerShell，再进入仓库目录。
-
-如果 `flutter doctor` 提示 Android toolchain 缺失，再安装 Android Studio / Android SDK，并按 `flutter doctor` 的具体提示补齐环境；不要跳过 doctor 的错误项。
+完成后关闭并重新打开 PowerShell，再进入仓库目录。如果 `flutter doctor` 提示 Android toolchain 缺失，按 doctor 的具体提示补齐 Android SDK / Command-line Tools / licenses。
 
 ## 本地构建
 
-仓库暂不提交 Flutter 自动生成的 Android 平台模板。环境准备完成后，在仓库根目录执行：
+仓库暂不提交 Flutter 自动生成的 Android 平台模板。在仓库根目录执行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tool\bootstrap_android.ps1
 ```
 
-脚本会依次执行：
+脚本依次执行：
 
-```powershell
-flutter --version
+```text
 flutter clean
 flutter create . --platforms=android --project-name=diandi_memory --org=com.lajgit
 flutter pub get
@@ -71,13 +63,13 @@ flutter test
 flutter build apk --debug
 ```
 
+Windows 项目和 Pub Cache 位于不同盘符时，脚本会为生成的 Android 工程关闭 Kotlin incremental compilation，规避跨盘符缓存路径问题。
+
 成功后 APK 位于：
 
 ```text
 build\app\outputs\flutter-apk\app-debug.apk
 ```
-
-GitHub Actions 也会使用同一流程生成 Android 平台文件并执行 analyze、test 和 debug APK 构建。
 
 ## 目录
 
@@ -88,24 +80,27 @@ lib/
 ├── core/
 │   └── database/
 │       └── app_database.dart
-├── features/
-│   └── import/
-│       ├── data/
-│       │   ├── messages_js_parser.dart
-│       │   ├── wechat_archive_importer.dart
-│       │   └── wechat_archive_scanner.dart
-│       ├── model/
-│       │   └── wechat_archive_models.dart
-│       └── ui/
-│           └── import_page.dart
-└── main.dart
+└── features/
+    ├── home/ui/home_page.dart
+    ├── import/
+    │   ├── data/
+    │   │   ├── archive_media_store.dart
+    │   │   ├── messages_js_parser.dart
+    │   │   ├── wechat_archive_importer.dart
+    │   │   └── wechat_archive_scanner.dart
+    │   └── ui/import_page.dart
+    └── memories/
+        ├── data/memory_repository.dart
+        ├── model/memory_models.dart
+        └── ui/memory_page.dart
 ```
 
-## 下一小阶段
+## 下一阶段
 
-SQLite 消息持久化真机验证通过后再实现：
+在媒体持久化与真实聊天证据链真机验证通过后，再继续：
 
-- ZIP 中媒体流式复制到 App 私有目录；
-- SHA-256 内容去重；
-- 回填 `media / message_media.media_id`；
-- App 重启后直接从 SQLite 浏览聊天，不再重复扫描 ZIP。
+- 事件 `events / event_messages` 数据层；
+- 手动笔记 `notes`；
+- AI 日 / 周 / 月 / 年总结；
+- 总结与原始消息证据之间的可追溯引用；
+- 视频、语音和文件的专用查看体验。

@@ -6,6 +6,7 @@ class MessagesJsParser {
   const MessagesJsParser();
 
   WechatExportArchive parse(String source) {
+    // WechatExplorer 的 messages.js 是 JS 赋值语句；等号右侧才是标准 JSON。
     final assignmentIndex = source.indexOf('=');
     if (assignmentIndex < 0) {
       throw const FormatException('messages.js 格式无法识别：缺少赋值符号');

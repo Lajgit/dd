@@ -1,15 +1,59 @@
 $ErrorActionPreference = "Stop"
 
-if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
-    throw "未找到 Flutter。请先安装 Flutter stable，并确保 flutter 已加入 PATH。"
+function Resolve-FlutterCommand {
+    $command = Get-Command flutter -ErrorAction SilentlyContinue
+    if ($null -ne $command) {
+        return $command.Source
+    }
+
+    $localFlutter = Join-Path $env:LOCALAPPDATA "Programs\flutter\bin\flutter.bat"
+    if (Test-Path $localFlutter) {
+        return $localFlutter
+    }
+
+    throw @"
+Flutter was not found.
+
+Run this first from the repository root:
+  powershell -ExecutionPolicy Bypass -File .\tool\install_flutter_windows.ps1
+
+Then close and reopen PowerShell, return to the repository, and run:
+  powershell -ExecutionPolicy Bypass -File .\tool\bootstrap_android.ps1
+"@
 }
 
-flutter create . `
-    --platforms=android `
-    --project-name=diandi_memory `
-    --org=com.lajgit
+function Invoke-Flutter {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
 
-flutter pub get
-flutter analyze
-flutter test
-flutter build apk --debug
+    & $script:FlutterCommand @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Flutter command failed: flutter $($Arguments -join ' ')"
+    }
+}
+
+$script:FlutterCommand = Resolve-FlutterCommand
+Write-Host "Using Flutter: $script:FlutterCommand"
+
+Invoke-Flutter @("--version")
+Invoke-Flutter @(
+    "create",
+    ".",
+    "--platforms=android",
+    "--project-name=diandi_memory",
+    "--org=com.lajgit"
+)
+Invoke-Flutter @("pub", "get")
+Invoke-Flutter @("analyze")
+Invoke-Flutter @("test")
+Invoke-Flutter @("build", "apk", "--debug")
+
+$apkPath = Join-Path (Get-Location) "build\app\outputs\flutter-apk\app-debug.apk"
+if (Test-Path $apkPath) {
+    Write-Host ""
+    Write-Host "Build succeeded. APK: $apkPath"
+} else {
+    throw "Build finished but APK was not found at: $apkPath"
+}

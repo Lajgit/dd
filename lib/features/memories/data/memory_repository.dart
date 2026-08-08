@@ -65,16 +65,14 @@ SELECT
   m.message_type,
   m.content,
   m.create_time,
-  mm.media_type,
-  mm.display_name AS media_name,
+  stored.media_type,
+  stored.display_name AS media_name,
   stored.local_path AS media_local_path
 FROM messages m
 LEFT JOIN (
   SELECT
     message_id,
-    MAX(media_id) AS media_id,
-    MAX(media_type) AS media_type,
-    MAX(display_name) AS display_name
+    MAX(media_id) AS media_id
   FROM message_media
   WHERE media_id IS NOT NULL
   GROUP BY message_id

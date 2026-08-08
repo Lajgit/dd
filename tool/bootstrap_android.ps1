@@ -34,6 +34,23 @@ function Invoke-Flutter {
     }
 }
 
+function Disable-KotlinIncrementalCompilation {
+    $gradlePropertiesPath = Join-Path (Get-Location) "android\gradle.properties"
+    if (-not (Test-Path $gradlePropertiesPath)) {
+        throw "Android gradle.properties was not generated: $gradlePropertiesPath"
+    }
+
+    $content = Get-Content -Path $gradlePropertiesPath -Raw
+    if ($content -match "(?m)^kotlin\.incremental=false\s*$") {
+        return
+    }
+
+    # Windows Kotlin incremental caches can fail when Pub Cache and the project are on different drive roots.
+    # Disable incremental compilation for this generated Android project to keep local builds deterministic.
+    Add-Content -Path $gradlePropertiesPath -Value "`nkotlin.incremental=false" -Encoding ASCII
+    Write-Host "Disabled Kotlin incremental compilation for Windows cross-drive build compatibility."
+}
+
 $script:FlutterCommand = Resolve-FlutterCommand
 Write-Host "Using Flutter: $script:FlutterCommand"
 
@@ -50,6 +67,7 @@ Invoke-Flutter @(
     "--project-name=diandi_memory",
     "--org=com.lajgit"
 )
+Disable-KotlinIncrementalCompilation
 Invoke-Flutter @("pub", "get")
 Invoke-Flutter @("analyze")
 Invoke-Flutter @("test")

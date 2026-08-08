@@ -15,7 +15,7 @@ SELECT
   strftime('%Y-%m-%d', m.create_time, 'unixepoch', 'localtime') AS day_key,
   COUNT(*) AS message_count,
   SUM(CASE WHEN m.is_sender = 1 THEN 1 ELSE 0 END) AS self_count,
-  SUM(CASE WHEN m.is_sender = 0 THEN 1 ELSE 0 END) AS other_count,
+  SUM(CASE WHEN m.is_sender = 0 AND m.sender_id IS NOT NULL THEN 1 ELSE 0 END) AS other_count,
   SUM(CASE WHEN COALESCE(mm.has_media, 0) = 1 THEN 1 ELSE 0 END) AS media_count
 FROM messages m
 LEFT JOIN (

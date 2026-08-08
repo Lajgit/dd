@@ -10,7 +10,10 @@ dependencies:
   flutter:
     sdk: flutter
   archive: ^4.0.9
+  crypto: ^3.0.7
   file_picker: 12.0.0-beta.7
+  path: ^1.9.1
+  sqflite: ^2.4.3
 
 dev_dependencies:
   flutter_test:

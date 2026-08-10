@@ -413,7 +413,7 @@ class _ChatBubble extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(14),
                   child: Image.file(
-                    mediaFile!,
+                    mediaFile,
                     height: 160,
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => const SizedBox.shrink(),

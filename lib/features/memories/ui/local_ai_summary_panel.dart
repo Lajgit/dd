@@ -12,19 +12,20 @@ class LocalAiSummaryPanel extends StatefulWidget {
     required this.onSummariesChanged,
     this.repository = const AiSummaryRepository(),
     this.modelManager = const LocalAiModelManager(),
-    this.summaryService = const HierarchicalSummaryService(),
+    this.summaryService,
   });
 
   final VoidCallback onSummariesChanged;
   final AiSummaryRepository repository;
   final LocalAiModelManager modelManager;
-  final HierarchicalSummaryService summaryService;
+  final HierarchicalSummaryService? summaryService;
 
   @override
   State<LocalAiSummaryPanel> createState() => _LocalAiSummaryPanelState();
 }
 
 class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
+  late final HierarchicalSummaryService _summaryService;
   SummaryPeriod _period = SummaryPeriod.day;
   LocalAiModelInfo? _model;
   List<SummaryRange> _ranges = const <SummaryRange>[];
@@ -38,6 +39,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
   @override
   void initState() {
     super.initState();
+    _summaryService = widget.summaryService ?? HierarchicalSummaryService();
     _reload();
   }
 
@@ -81,8 +83,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
       final model = await widget.modelManager.importModel(
         sourcePath,
         onProgress: (progress) {
-          if (!mounted) return;
-          setState(() => _modelCopyProgress = progress);
+          if (mounted) setState(() => _modelCopyProgress = progress);
         },
       );
       if (!mounted) return;
@@ -111,15 +112,17 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
       _status = '准备 ${range.label} 的本地 AI 总结…';
     });
     try {
-      await widget.summaryService.generate(
+      await _summaryService.generate(
         range,
         onProgress: (status) {
           if (mounted) setState(() => _status = status);
         },
       );
+      if (!mounted) return;
       await _reload();
+      if (!mounted) return;
       widget.onSummariesChanged();
-      if (mounted) setState(() => _status = '${range.label} 总结完成');
+      setState(() => _status = '${range.label} 总结完成');
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = '生成 ${range.label} 总结失败：$error');
@@ -136,18 +139,23 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
     });
     try {
       for (var index = _ranges.length - 1; index >= 0; index -= 1) {
+        if (!mounted) return;
         final range = _ranges[index];
-        setState(() => _status = '生成 ${range.label}（${_ranges.length - index}/${_ranges.length}）');
-        await widget.summaryService.generate(
+        setState(() {
+          _status = '生成 ${range.label}（${_ranges.length - index}/${_ranges.length}）';
+        });
+        await _summaryService.generate(
           range,
           onProgress: (status) {
             if (mounted) setState(() => _status = status);
           },
         );
       }
+      if (!mounted) return;
       await _reload();
+      if (!mounted) return;
       widget.onSummariesChanged();
-      if (mounted) setState(() => _status = '当前${_period.label}总结已全部更新');
+      setState(() => _status = '当前${_period.label}总结已全部更新');
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = '批量生成失败：$error');
@@ -236,6 +244,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
               ),
               const SizedBox(height: 12),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(
                     child: Text(
@@ -264,20 +273,14 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
         ],
         if (_error != null) ...[
           const SizedBox(height: 10),
-          Text(
-            _error!,
-            style: TextStyle(color: scheme.error),
-          ),
+          Text(_error!, style: TextStyle(color: scheme.error)),
         ],
         if (_loading) ...[
           const SizedBox(height: 12),
           const LinearProgressIndicator(),
         ] else if (_period == SummaryPeriod.day) ...[
           const SizedBox(height: 12),
-          _DayAiStatus(
-            total: _ranges.length,
-            generated: _summaries.length,
-          ),
+          _DayAiStatus(total: _ranges.length, generated: _summaries.length),
         ] else ...[
           const SizedBox(height: 12),
           for (final range in _ranges) ...[
@@ -311,11 +314,15 @@ class _DayAiStatus extends StatelessWidget {
         border: Border.all(color: const Color(0xFFF0DDDA)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Icon(Icons.today_rounded, size: 20),
           const SizedBox(width: 8),
-          Expanded(child: Text('已生成 $generated / $total 天的本地 AI 总结')),
-          const Text('生成后会替换下方关键词摘录'),
+          Expanded(
+            child: Text(
+              '已生成 $generated / $total 天。生成完成后，「回忆」页的当天摘要会自动优先使用本地 AI 结果。',
+            ),
+          ),
         ],
       ),
     );
@@ -345,6 +352,7 @@ class _AggregateSummaryCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Text(
@@ -354,7 +362,14 @@ class _AggregateSummaryCard extends StatelessWidget {
                         ),
                   ),
                 ),
-                Text('${range.dayCount} 天 · ${range.messageCount} 条聊天'),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    '${range.dayCount} 天 · ${range.messageCount} 条聊天',
+                    textAlign: TextAlign.right,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),

@@ -53,16 +53,44 @@ function Disable-KotlinIncrementalCompilation {
 
 function Configure-AndroidForLocalAi {
     $appGradlePath = Join-Path (Get-Location) "android\app\build.gradle.kts"
+    $gradlePropertiesPath = Join-Path (Get-Location) "android\gradle.properties"
     if (-not (Test-Path $appGradlePath)) {
         throw "Android app build.gradle.kts was not generated: $appGradlePath"
     }
+    if (-not (Test-Path $gradlePropertiesPath)) {
+        throw "Android gradle.properties was not generated: $gradlePropertiesPath"
+    }
 
     $content = Get-Content -Path $appGradlePath -Raw
+    $gradleProperties = Get-Content -Path $gradlePropertiesPath -Raw
+    $changed = $false
+
     if ($content -match "minSdk\s*=\s*flutter\.minSdkVersion") {
         # llama.cpp Android runtime requires API 26+, while the test device is already API 33.
         $content = $content -replace "minSdk\s*=\s*flutter\.minSdkVersion", "minSdk = 26"
-        Set-Content -Path $appGradlePath -Value $content -Encoding UTF8
+        $changed = $true
         Write-Host "Configured Android minSdk 26 for local llama.cpp inference."
+    }
+
+    $usesLegacyKotlin = $gradleProperties -match "(?m)^android\.builtInKotlin=false\s*$"
+    $hasKotlinCompilerDsl = $content -match "(?m)^kotlin\s*\{"
+    $hasKotlinPlugin = $content -match 'id\("org\.jetbrains\.kotlin\.android"\)'
+    if ($usesLegacyKotlin -and $hasKotlinCompilerDsl -and -not $hasKotlinPlugin) {
+        # Flutter 3.44 can generate the top-level kotlin.compilerOptions block while the
+        # compatibility migrator disables AGP 9 built-in Kotlin. In that legacy mode the
+        # Kotlin Android plugin must be applied so the top-level kotlin extension exists.
+        $applicationPluginPattern = '(?m)^(\s*)id\("com\.android\.application"\)\s*$'
+        if ($content -notmatch $applicationPluginPattern) {
+            throw "Android application plugin declaration was not found in: $appGradlePath"
+        }
+        $replacement = '$0' + [Environment]::NewLine + '$1id("org.jetbrains.kotlin.android")'
+        $content = $content -replace $applicationPluginPattern, $replacement
+        $changed = $true
+        Write-Host "Applied Kotlin Android plugin for Flutter 3.44 legacy Kotlin compatibility."
+    }
+
+    if ($changed) {
+        Set-Content -Path $appGradlePath -Value $content -Encoding UTF8
     }
 }
 

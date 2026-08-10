@@ -51,6 +51,21 @@ function Disable-KotlinIncrementalCompilation {
     Write-Host "Disabled Kotlin incremental compilation for Windows cross-drive build compatibility."
 }
 
+function Configure-AndroidForLocalAi {
+    $appGradlePath = Join-Path (Get-Location) "android\app\build.gradle.kts"
+    if (-not (Test-Path $appGradlePath)) {
+        throw "Android app build.gradle.kts was not generated: $appGradlePath"
+    }
+
+    $content = Get-Content -Path $appGradlePath -Raw
+    if ($content -match "minSdk\s*=\s*flutter\.minSdkVersion") {
+        # llama.cpp Android runtime requires API 26+, while the test device is already API 33.
+        $content = $content -replace "minSdk\s*=\s*flutter\.minSdkVersion", "minSdk = 26"
+        Set-Content -Path $appGradlePath -Value $content -Encoding UTF8
+        Write-Host "Configured Android minSdk 26 for local llama.cpp inference."
+    }
+}
+
 $script:FlutterCommand = Resolve-FlutterCommand
 Write-Host "Using Flutter: $script:FlutterCommand"
 
@@ -68,6 +83,7 @@ Invoke-Flutter @(
     "--org=com.lajgit"
 )
 Disable-KotlinIncrementalCompilation
+Configure-AndroidForLocalAi
 Invoke-Flutter @("pub", "get")
 Invoke-Flutter @("analyze")
 Invoke-Flutter @("test")

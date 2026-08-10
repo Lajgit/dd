@@ -27,7 +27,7 @@ class BundledLocalAiModel {
     final modelPath = result?['path'] as String?;
     final byteSize = result?['byteSize'] as int?;
     if (modelPath == null || modelPath.isEmpty || byteSize == null) {
-      throw const PlatformException(
+      throw PlatformException(
         code: 'bundled_model_missing',
         message: '内置 GGUF 模型没有正确安装到 App 私有目录',
       );

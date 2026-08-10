@@ -77,7 +77,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
       _busyKey = 'model';
       _modelCopyProgress = 0;
       _error = null;
-      _status = '正在把 GGUF 模型复制到 App 私有目录…';
+      _status = '正在把自定义 GGUF 复制到 App 私有目录…';
     });
     try {
       final model = await widget.modelManager.importModel(
@@ -89,11 +89,11 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
       if (!mounted) return;
       setState(() {
         _model = model;
-        _status = '本地模型已就绪：${model.name}';
+        _status = '已切换到自定义模型：${model.name}';
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = '导入本地模型失败：$error');
+      setState(() => _error = '导入自定义模型失败：$error');
     } finally {
       if (mounted) {
         setState(() {
@@ -101,6 +101,28 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
           _modelCopyProgress = null;
         });
       }
+    }
+  }
+
+  Future<void> _useBundledModel() async {
+    if (_busyKey != null) return;
+    setState(() {
+      _busyKey = 'model';
+      _error = null;
+      _status = '正在切回 App 内置轻量模型…';
+    });
+    try {
+      final model = await widget.modelManager.useBundledModel();
+      if (!mounted) return;
+      setState(() {
+        _model = model;
+        _status = '已使用内置模型：${model.name}';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = '启用内置模型失败：$error');
+    } finally {
+      if (mounted) setState(() => _busyKey = null);
     }
   }
 
@@ -177,6 +199,13 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final model = _model;
+    final modelDescription = _loading && model == null
+        ? '首次打开会把 APK 内置的 Qwen3 0.6B 轻量模型复制到 App 私有目录，之后可完全离线使用。'
+        : model == null
+            ? '内置模型暂未就绪；仍可通过高级选项选择自己的 GGUF。'
+            : '${model.isBundled ? '内置轻量模型' : '自定义 GGUF'} · ${model.name} · ${_formatBytes(model.byteSize)} · 完全本地运行';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -204,21 +233,37 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
                           ),
                     ),
                   ),
-                  FilledButton.tonal(
-                    onPressed: _busyKey == null ? _selectModel : null,
-                    child: Text(_model == null ? '选择模型' : '更换模型'),
-                  ),
+                  if (model?.isBundled == true)
+                    const _ModelTag(label: '内置')
+                  else if (model != null)
+                    const _ModelTag(label: '自定义'),
                 ],
               ),
               const SizedBox(height: 8),
               Text(
-                _model == null
-                    ? '选择一个 GGUF 小模型后，聊天文字会直接在手机上总结，不上传网络。推荐先用 Qwen3 0.6B / 1.7B。'
-                    : '${_model!.name} · ${_formatBytes(_model!.byteSize)} · 完全本地运行',
+                modelDescription,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                       height: 1.4,
                     ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _busyKey == null ? _selectModel : null,
+                    icon: const Icon(Icons.tune_rounded),
+                    label: const Text('高级：选择自定义 GGUF'),
+                  ),
+                  if (model != null && !model.isBundled)
+                    FilledButton.tonalIcon(
+                      onPressed: _busyKey == null ? _useBundledModel : null,
+                      icon: const Icon(Icons.restore_rounded),
+                      label: const Text('恢复内置模型'),
+                    ),
+                ],
               ),
               if (_modelCopyProgress != null) ...[
                 const SizedBox(height: 12),
@@ -256,7 +301,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
                   ),
                   const SizedBox(width: 12),
                   FilledButton.icon(
-                    onPressed: _model != null && _busyKey == null && _ranges.isNotEmpty
+                    onPressed: model != null && _busyKey == null && _ranges.isNotEmpty
                         ? _generateAll
                         : null,
                     icon: const Icon(Icons.auto_awesome_rounded),
@@ -294,6 +339,24 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
           ],
         ],
       ],
+    );
+  }
+}
+
+class _ModelTag extends StatelessWidget {
+  const _ModelTag({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(label, style: Theme.of(context).textTheme.labelMedium),
     );
   }
 }

@@ -117,8 +117,12 @@ ORDER BY day_key ASC
   }
 
   Future<String> sourceHashForMessages(List<AiTextMessage> messages) async {
+    // 发送方也是语义的一部分；双方相同文字不应被视为同一个 AI 输入版本。
     final value = messages
-        .map((message) => '${message.id}|${message.createTime}|${message.content}')
+        .map(
+          (message) => '${message.id}|${message.createTime}|${message.isSender ? 1 : 0}|'
+              '${message.senderName ?? ''}|${message.content}',
+        )
         .join('\n');
     return sha256.convert(utf8.encode(value)).toString();
   }

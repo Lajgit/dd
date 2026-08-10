@@ -3,7 +3,8 @@ class DailyActivitySummarizer {
 
   static const _activityKeywords = <String>[
     '去',
-    '到',
+    '到家',
+    '到了',
     '回家',
     '回来',
     '出发',
@@ -14,7 +15,6 @@ class DailyActivitySummarizer {
     '逛',
     '看电影',
     '看剧',
-    '看',
     '玩',
     '游戏',
     '散步',
@@ -42,10 +42,12 @@ class DailyActivitySummarizer {
     required List<String> activityCandidates,
     required List<String> fallbackCandidates,
   }) {
-    final preferred = _rank(activityCandidates);
+    final preferred = _rank(activityCandidates, minimumScore: 2);
     final selected = preferred.isNotEmpty
         ? preferred.take(3).toList(growable: false)
-        : _rank(fallbackCandidates).take(2).toList(growable: false);
+        : _rank(fallbackCandidates, minimumScore: 0)
+            .take(2)
+            .toList(growable: false);
 
     if (selected.isEmpty) {
       return '这一天更多是零碎的日常聊天，展开后可以直接回看当天的真实记录。';
@@ -58,7 +60,10 @@ class DailyActivitySummarizer {
     return '这一天聊天里比较有代表性的片段有：$snippets。';
   }
 
-  List<String> _rank(List<String> values) {
+  List<String> _rank(
+    List<String> values, {
+    required int minimumScore,
+  }) {
     final seen = <String>{};
     final scored = <({String text, int score, int order})>[];
 
@@ -86,7 +91,9 @@ class DailyActivitySummarizer {
         score -= 4;
       }
 
-      scored.add((text: normalized, score: score, order: index));
+      if (score >= minimumScore) {
+        scored.add((text: normalized, score: score, order: index));
+      }
     }
 
     scored.sort((first, second) {

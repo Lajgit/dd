@@ -96,13 +96,24 @@ GROUP BY day_key
 ORDER BY day_key DESC
 ''');
 
+    final aiRows = await db.query(
+      'ai_summaries',
+      columns: const <String>['period_key', 'summary_text'],
+      where: 'period_type = ?',
+      whereArgs: const <Object?>['day'],
+    );
+    final aiSummaryByDay = <String, String>{
+      for (final row in aiRows)
+        row['period_key']! as String: row['summary_text']! as String,
+    };
+
     return rows
         .where((row) => row['day_key'] is String)
         .map((row) {
           final dateKey = row['day_key']! as String;
           final dateParts = dateKey.split('-').map(int.parse).toList();
           final dayStart = DateTime(dateParts[0], dateParts[1], dateParts[2]);
-          final activitySummary = activitySummarizer.summarize(
+          final offlineSummary = activitySummarizer.summarize(
             activityCandidates: _splitCandidates(row['activity_candidates']),
             fallbackCandidates: _splitCandidates(row['fallback_candidates']),
           );
@@ -113,7 +124,8 @@ ORDER BY day_key DESC
             selfMessageCount: (row['self_count'] as num?)?.toInt() ?? 0,
             otherMessageCount: (row['other_count'] as num?)?.toInt() ?? 0,
             mediaMessageCount: (row['media_count'] as num?)?.toInt() ?? 0,
-            activitySummary: activitySummary,
+            // AI 总结存在时优先展示；没有模型或还没生成时继续保留离线提取兜底。
+            activitySummary: aiSummaryByDay[dateKey] ?? offlineSummary,
           );
         })
         .toList(growable: false);

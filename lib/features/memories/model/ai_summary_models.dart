@@ -13,7 +13,8 @@ extension SummaryPeriodX on SummaryPeriod {
   SummaryPeriod? get child => switch (this) {
         SummaryPeriod.day => null,
         SummaryPeriod.week => SummaryPeriod.day,
-        SummaryPeriod.month => SummaryPeriod.week,
+        // 月份可能从周中开始或结束；直接聚合日总结可避免跨月周把别月内容带入。
+        SummaryPeriod.month => SummaryPeriod.day,
         SummaryPeriod.year => SummaryPeriod.month,
       };
 }

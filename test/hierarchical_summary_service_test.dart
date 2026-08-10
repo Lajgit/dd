@@ -48,4 +48,31 @@ void main() {
     expect(localAiAggregateMaxTokens, lessThanOrEqualTo(360));
     expect(localAiYearMaxTokens, lessThanOrEqualTo(520));
   });
+
+  test('日总结拒绝把提示词问题句当成真实总结', () {
+    expect(
+      parseSingleSummaryOutput('总结：今天做了什么，商量了什么，有什么值得记住的互动。'),
+      isEmpty,
+    );
+  });
+
+  test('片段总结拒绝模板占位词但保留真实事件', () {
+    final result = parseChunkSummaryOutput(
+      '''
+总结：这一段发生了什么，1-3句
+事件：短标题｜发生了什么｜10,12
+事件：看电影｜两个人约好晚上去看电影｜12,16
+''',
+      allowedMessageIds: const <int>{10, 12, 16},
+    );
+
+    expect(result.summaryText, '两个人约好晚上去看电影');
+    expect(result.events, hasLength(1));
+    expect(result.events.single.title, '看电影');
+    expect(result.events.single.messageIds, <int>[12, 16]);
+  });
+
+  test('提示词版本存在以强制旧的错误总结失效', () {
+    expect(localAiPromptVersion, isNotEmpty);
+  });
 }

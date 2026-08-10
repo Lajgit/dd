@@ -21,7 +21,7 @@ class LocalAiSummaryPage extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              '先用本地模型理解每天发生的事，再逐级合并成周、月和年总结。模型与聊天文字都留在设备上。',
+              '默认使用 App 内置轻量模型理解每天发生的事，再逐级合并成周、月和年总结；高级模式也可以换成自己的 GGUF。聊天文字始终留在设备上。',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                     height: 1.5,

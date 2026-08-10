@@ -29,7 +29,8 @@ SELECT
           AND lower(trim(m.content)) NOT LIKE 'http%'
           AND (
             m.content LIKE '%去%'
-            OR m.content LIKE '%到%'
+            OR m.content LIKE '%到家%'
+            OR m.content LIKE '%到了%'
             OR m.content LIKE '%回家%'
             OR m.content LIKE '%回来%'
             OR m.content LIKE '%出发%'

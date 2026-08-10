@@ -19,6 +19,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late int _selectedIndex;
   int _memoryRefreshToken = 0;
+  final List<Widget?> _pages = List<Widget?>.filled(3, null);
 
   @override
   void initState() {
@@ -28,46 +29,78 @@ class _HomePageState extends State<HomePage> {
         : widget.initialIndex > 2
             ? 2
             : widget.initialIndex;
+    _ensurePage(_selectedIndex);
+  }
+
+  void _ensurePage(int index) {
+    if (index == 0) {
+      _pages[0] = MemoryOverviewPage(
+        key: ValueKey<int>(_memoryRefreshToken),
+        refreshToken: _memoryRefreshToken,
+        onOpenImport: _openImport,
+        onOpenAi: _openAi,
+      );
+      return;
+    }
+    if (_pages[index] != null) return;
+    _pages[index] = switch (index) {
+      1 => const LocalAiSummaryPage(),
+      _ => ImportPage(
+          onImported: _handleImported,
+          onOpenMemories: _openMemories,
+        ),
+    };
   }
 
   void _handleImported() {
-    setState(() => _memoryRefreshToken += 1);
+    setState(() {
+      _memoryRefreshToken += 1;
+      if (_pages[0] != null) _ensurePage(0);
+    });
   }
 
   void _openMemories() {
     setState(() {
       _memoryRefreshToken += 1;
       _selectedIndex = 0;
+      _ensurePage(0);
     });
   }
 
   void _openAi() {
-    setState(() => _selectedIndex = 1);
+    setState(() {
+      _selectedIndex = 1;
+      _ensurePage(1);
+    });
   }
 
   void _openImport() {
-    setState(() => _selectedIndex = 2);
+    setState(() {
+      _selectedIndex = 2;
+      _ensurePage(2);
+    });
+  }
+
+  void _selectTab(int index) {
+    setState(() {
+      _selectedIndex = index;
+      if (index == 0) {
+        _memoryRefreshToken += 1;
+      }
+      _ensurePage(index);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final pages = <Widget>[
-      MemoryOverviewPage(
-        refreshToken: _memoryRefreshToken,
-        onOpenImport: _openImport,
-        onOpenAi: _openAi,
-      ),
-      const LocalAiSummaryPage(),
-      ImportPage(
-        onImported: _handleImported,
-        onOpenMemories: _openMemories,
-      ),
-    ];
-
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
-        children: pages,
+        children: [
+          _pages[0] ?? const SizedBox.shrink(),
+          _pages[1] ?? const SizedBox.shrink(),
+          _pages[2] ?? const SizedBox.shrink(),
+        ],
       ),
       bottomNavigationBar: DecoratedBox(
         decoration: BoxDecoration(
@@ -80,12 +113,7 @@ class _HomePageState extends State<HomePage> {
         ),
         child: NavigationBar(
           selectedIndex: _selectedIndex,
-          onDestinationSelected: (index) {
-            setState(() {
-              _selectedIndex = index;
-              if (index == 0) _memoryRefreshToken += 1;
-            });
-          },
+          onDestinationSelected: _selectTab,
           destinations: const [
             NavigationDestination(
               icon: Icon(Icons.favorite_border_rounded),

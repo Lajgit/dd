@@ -51,17 +51,23 @@ class LocalAiModelManager {
       throw const FormatException('请选择 .gguf 本地模型文件');
     }
 
+    final previous = await currentModel();
     final totalBytes = source.lengthSync();
+    final modified = source.lastModifiedSync().millisecondsSinceEpoch;
     final storageRoot = await database.storageRootPath();
     final modelDirectory = Directory(path.join(storageRoot, 'models'))
       ..createSync(recursive: true);
-    final targetPath = path.join(modelDirectory.path, 'local_summary_model.gguf');
+    final targetPath = path.join(
+      modelDirectory.path,
+      'local_summary_${totalBytes}_$modified.gguf',
+    );
     final tempPath = '$targetPath.part';
     final tempFile = File(tempPath);
     if (tempFile.existsSync()) tempFile.deleteSync();
 
     final sink = tempFile.openWrite();
     var copiedBytes = 0;
+    var sinkClosed = false;
     try {
       // 大模型按块复制到 App 私有目录，避免 1GB 级 GGUF 整体进入 Dart 内存。
       await for (final chunk in source.openRead()) {
@@ -71,8 +77,9 @@ class LocalAiModelManager {
       }
       await sink.flush();
       await sink.close();
+      sinkClosed = true;
     } catch (_) {
-      await sink.close();
+      if (!sinkClosed) await sink.close();
       if (tempFile.existsSync()) tempFile.deleteSync();
       rethrow;
     }
@@ -87,6 +94,16 @@ class LocalAiModelManager {
       byteSize: totalBytes,
     );
     await _saveModelInfo(info);
+
+    final previousPath = previous?.path;
+    if (previousPath != null && previousPath != targetPath) {
+      try {
+        final previousFile = File(previousPath);
+        if (previousFile.existsSync()) previousFile.deleteSync();
+      } catch (_) {
+        // 旧模型可能仍被 native mmap 使用；删除失败不影响新模型启用，下次可继续覆盖。
+      }
+    }
     return info;
   }
 

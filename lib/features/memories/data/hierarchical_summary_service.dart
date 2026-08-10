@@ -6,11 +6,13 @@ import 'local_ai_model_manager.dart';
 import '../model/ai_summary_models.dart';
 
 class HierarchicalSummaryService {
-  const HierarchicalSummaryService({
-    this.repository = const AiSummaryRepository(),
-    this.modelManager = const LocalAiModelManager(),
-    this.engine = LocalAiEngine.instance,
-  });
+  HierarchicalSummaryService({
+    AiSummaryRepository? repository,
+    LocalAiModelManager? modelManager,
+    LocalAiEngine? engine,
+  })  : repository = repository ?? const AiSummaryRepository(),
+        modelManager = modelManager ?? const LocalAiModelManager(),
+        engine = engine ?? LocalAiEngine.instance;
 
   final AiSummaryRepository repository;
   final LocalAiModelManager modelManager;
@@ -37,22 +39,22 @@ class HierarchicalSummaryService {
   ) async {
     final messages = await repository.loadTextMessages(range);
     final sourceHash = await repository.sourceHashForMessages(messages);
+    final cacheKey = _modelCacheKey(model);
     final cached = await repository.loadSummary(range.period, range.key);
     if (cached != null &&
         cached.sourceHash == sourceHash &&
-        cached.modelName == model.name) {
+        cached.modelName == cacheKey) {
       onProgress?.call('${range.label} 已有最新本地 AI 总结');
       return cached;
     }
     if (messages.isEmpty) {
-      final generated = const GeneratedAiSummary(
-        summaryText: '这一天没有足够的文字聊天可供本地 AI 总结。',
-      );
       return repository.saveSummary(
         range: range,
-        generated: generated,
+        generated: const GeneratedAiSummary(
+          summaryText: '这一天没有足够的文字聊天可供本地 AI 总结。',
+        ),
         sourceHash: sourceHash,
-        modelName: model.name,
+        modelName: cacheKey,
       );
     }
 
@@ -71,20 +73,19 @@ class HierarchicalSummaryService {
 
     final allEvents = chunkResults.expand((result) => result.events).toList();
     onProgress?.call('${range.label}：整理全天发生的事情');
-    final finalText = await _summarizeDayFromChunks(
-      model: model,
-      range: range,
-      chunkResults: chunkResults,
-    );
     final generated = GeneratedAiSummary(
-      summaryText: finalText,
+      summaryText: await _summarizeDayFromChunks(
+        model: model,
+        range: range,
+        chunkResults: chunkResults,
+      ),
       events: allEvents.take(12).toList(growable: false),
     );
     return repository.saveSummary(
       range: range,
       generated: generated,
       sourceHash: sourceHash,
-      modelName: model.name,
+      modelName: cacheKey,
     );
   }
 
@@ -109,10 +110,11 @@ class HierarchicalSummaryService {
     children.sort((a, b) => a.startSeconds.compareTo(b.startSeconds));
 
     final sourceHash = await repository.sourceHashForChildren(children);
+    final cacheKey = _modelCacheKey(model);
     final cached = await repository.loadSummary(range.period, range.key);
     if (cached != null &&
         cached.sourceHash == sourceHash &&
-        cached.modelName == model.name) {
+        cached.modelName == cacheKey) {
       onProgress?.call('${range.label} 已有最新本地 AI 总结');
       return cached;
     }
@@ -127,7 +129,7 @@ class HierarchicalSummaryService {
       range: range,
       generated: generated,
       sourceHash: sourceHash,
-      modelName: model.name,
+      modelName: cacheKey,
       childSummaryIds: children.map((child) => child.id).toList(growable: false),
     );
   }
@@ -141,7 +143,7 @@ class HierarchicalSummaryService {
     final chatText = messages.map(_messageLine).join('\n');
     final raw = await engine.complete(
       modelPath: model.path,
-      maxTokens: 900,
+      maxTokens: 760,
       systemPrompt: _systemPrompt,
       userPrompt: '''
 请整理 ${range.label} 的这一段情侣聊天。只依据输入，不要补充没有说过的事实。
@@ -193,8 +195,8 @@ $chatText
       final events = entry.value.events
           .map((event) => '${event.title}：${event.description}')
           .join('；');
-      return '片段${entry.key + 1}：${entry.value.summaryText}'
-          '${events.isEmpty ? '' : '；事件：$events'}';
+      return '片段${entry.key + 1}：${_limit(entry.value.summaryText, 180)}'
+          '${events.isEmpty ? '' : '；事件：${_limit(events, 320)}'}';
     }).join('\n');
     final raw = await engine.complete(
       modelPath: model.path,
@@ -227,7 +229,7 @@ $material
       final label = child.period == SummaryPeriod.day
           ? '${date.month}月${date.day}日'
           : child.key;
-      return '$label：${child.summaryText}';
+      return '$label：${_limit(child.summaryText, 220)}';
     }).join('\n');
     final target = switch (range.period) {
       SummaryPeriod.week => '这一周共同经历的事情、反复出现的话题和特别的日子',
@@ -237,7 +239,7 @@ $material
     };
     final raw = await engine.complete(
       modelPath: model.path,
-      maxTokens: range.period == SummaryPeriod.year ? 900 : 650,
+      maxTokens: range.period == SummaryPeriod.year ? 820 : 620,
       systemPrompt: _systemPrompt,
       userPrompt: '''
 把下面更小时间单位的真实 AI 总结，合并成 ${range.label} 的回忆总结。
@@ -266,7 +268,7 @@ const _systemPrompt = '''
 
 List<List<AiTextMessage>> buildConversationChunks(
   List<AiTextMessage> messages, {
-  int maxCharacters = 5200,
+  int maxCharacters = 2400,
   Duration gap = const Duration(minutes: 45),
 }) {
   if (messages.isEmpty) return const <List<AiTextMessage>>[];
@@ -303,10 +305,15 @@ String _messageLine(AiTextMessage message) {
       : (message.senderName?.trim().isNotEmpty == true
           ? message.senderName!.trim()
           : '对方');
-  final content = message.content.length > 180
-      ? '${message.content.substring(0, 178)}…'
-      : message.content;
+  final content = _limit(message.content, 180);
   return '[id=${message.id}][$hour:$minute][$sender] $content';
+}
+
+String _modelCacheKey(LocalAiModelInfo model) => '${model.name}|${model.byteSize}';
+
+String _limit(String value, int maxLength) {
+  if (value.length <= maxLength) return value;
+  return '${value.substring(0, maxLength - 1)}…';
 }
 
 Map<String, dynamic> _decodeJsonObject(String raw) {

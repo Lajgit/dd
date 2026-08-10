@@ -77,7 +77,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
       _busyKey = 'model';
       _modelCopyProgress = 0;
       _error = null;
-      _status = '正在把自定义 GGUF 复制到 App 私有目录…';
+      _status = '正在导入自定义 GGUF…';
     });
     try {
       final model = await widget.modelManager.importModel(
@@ -89,7 +89,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
       if (!mounted) return;
       setState(() {
         _model = model;
-        _status = '已切换到自定义模型：${model.name}';
+        _status = '已切换到 ${model.name}';
       });
     } catch (error) {
       if (!mounted) return;
@@ -109,14 +109,14 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
     setState(() {
       _busyKey = 'model';
       _error = null;
-      _status = '正在切回 App 内置轻量模型…';
+      _status = '正在恢复内置轻量模型…';
     });
     try {
       final model = await widget.modelManager.useBundledModel();
       if (!mounted) return;
       setState(() {
         _model = model;
-        _status = '已使用内置模型：${model.name}';
+        _status = '已使用内置模型';
       });
     } catch (error) {
       if (!mounted) return;
@@ -131,7 +131,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
     setState(() {
       _busyKey = range.key;
       _error = null;
-      _status = '准备 ${range.label} 的本地 AI 总结…';
+      _status = '准备 ${range.label}…';
     });
     try {
       await _summaryService.generate(
@@ -144,7 +144,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
       await _reload();
       if (!mounted) return;
       widget.onSummariesChanged();
-      setState(() => _status = '${range.label} 总结完成');
+      setState(() => _status = '${range.label} 已整理完成');
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = '生成 ${range.label} 总结失败：$error');
@@ -164,7 +164,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
         if (!mounted) return;
         final range = _ranges[index];
         setState(() {
-          _status = '生成 ${range.label}（${_ranges.length - index}/${_ranges.length}）';
+          _status = '整理 ${range.label}（${_ranges.length - index}/${_ranges.length}）';
         });
         await _summaryService.generate(
           range,
@@ -200,136 +200,103 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final model = _model;
-    final modelDescription = _loading && model == null
-        ? '首次打开会把 APK 内置的 Qwen3 0.6B 轻量模型复制到 App 私有目录，之后可完全离线使用。'
-        : model == null
-            ? '内置模型暂未就绪；仍可通过高级选项选择自己的 GGUF。'
-            : '${model.isBundled ? '内置轻量模型' : '自定义 GGUF'} · ${model.name} · ${_formatBytes(model.byteSize)} · 完全本地运行';
+    final generated = _ranges.where((range) => _summaries.containsKey(range.key)).length;
+    final pending = _ranges.length - generated;
+    final progress = _ranges.isEmpty ? 0.0 : generated / _ranges.length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: <Color>[Color(0xFFFFF1EF), Color(0xFFFFE5EB)],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: const Color(0xFFF0D6D8)),
+        _ModelCard(
+          model: model,
+          loading: _loading,
+          busy: _busyKey != null,
+          copyProgress: _modelCopyProgress,
+          onSelectModel: _selectModel,
+          onUseBundledModel: _useBundledModel,
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<SummaryPeriod>(
+            showSelectedIcon: false,
+            segments: SummaryPeriod.values
+                .map(
+                  (period) => ButtonSegment<SummaryPeriod>(
+                    value: period,
+                    label: Text(period.label),
+                  ),
+                )
+                .toList(growable: false),
+            selected: <SummaryPeriod>{_period},
+            onSelectionChanged: _busyKey == null
+                ? (selection) => _changePeriod(selection.single)
+                : null,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.memory_rounded, color: scheme.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '本地 AI 回忆总结',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                    ),
-                  ),
-                  if (model?.isBundled == true)
-                    const _ModelTag(label: '内置')
-                  else if (model != null)
-                    const _ModelTag(label: '自定义'),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                modelDescription,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      height: 1.4,
-                    ),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: _busyKey == null ? _selectModel : null,
-                    icon: const Icon(Icons.tune_rounded),
-                    label: const Text('高级：选择自定义 GGUF'),
-                  ),
-                  if (model != null && !model.isBundled)
-                    FilledButton.tonalIcon(
-                      onPressed: _busyKey == null ? _useBundledModel : null,
-                      icon: const Icon(Icons.restore_rounded),
-                      label: const Text('恢复内置模型'),
-                    ),
-                ],
-              ),
-              if (_modelCopyProgress != null) ...[
-                const SizedBox(height: 12),
-                LinearProgressIndicator(value: _modelCopyProgress),
-              ],
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<SummaryPeriod>(
-                  segments: SummaryPeriod.values
-                      .map(
-                        (period) => ButtonSegment<SummaryPeriod>(
-                          value: period,
-                          label: Text('${period.label}总结'),
+        ),
+        const SizedBox(height: 14),
+        _ProgressCard(
+          period: _period,
+          total: _ranges.length,
+          generated: generated,
+          progress: progress,
+          busy: _busyKey == '__all__',
+          status: _status,
+          modelReady: model != null,
+          onGenerateAll: _generateAll,
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: scheme.errorContainer.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.error_outline_rounded, color: scheme.error),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    _error!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onErrorContainer,
                         ),
-                      )
-                      .toList(growable: false),
-                  selected: <SummaryPeriod>{_period},
-                  onSelectionChanged: _busyKey == null
-                      ? (selection) => _changePeriod(selection.single)
-                      : null,
+                  ),
                 ),
+              ],
+            ),
+          ),
+        ],
+        if (_loading) ...[
+          const SizedBox(height: 14),
+          const LinearProgressIndicator(),
+        ] else if (_ranges.isEmpty) ...[
+          const SizedBox(height: 14),
+          const _NoRangeCard(),
+        ] else ...[
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Text(
+                _period == SummaryPeriod.day ? '每天的回忆' : '${_period.label}回忆',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
-              const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: Text(
-                      _period == SummaryPeriod.day
-                          ? '日总结从当天真实聊天分段提取事件；周/月/年总结会复用更小周期的 AI 总结逐级合并。'
-                          : '${_period.label}总结只读取已经生成的下一级总结；缺少时会自动先补齐，结果会缓存到 SQLite。',
-                      style: Theme.of(context).textTheme.bodySmall,
+              const Spacer(),
+              Text(
+                pending == 0 ? '已全部整理' : '还差 $pending 个',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: pending == 0 ? scheme.primary : scheme.onSurfaceVariant,
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  FilledButton.icon(
-                    onPressed: model != null && _busyKey == null && _ranges.isNotEmpty
-                        ? _generateAll
-                        : null,
-                    icon: const Icon(Icons.auto_awesome_rounded),
-                    label: Text(_busyKey == '__all__' ? '生成中…' : '生成全部'),
-                  ),
-                ],
               ),
             ],
           ),
-        ),
-        if (_status != null) ...[
           const SizedBox(height: 10),
-          Text(_status!, style: Theme.of(context).textTheme.bodySmall),
-        ],
-        if (_error != null) ...[
-          const SizedBox(height: 10),
-          Text(_error!, style: TextStyle(color: scheme.error)),
-        ],
-        if (_loading) ...[
-          const SizedBox(height: 12),
-          const LinearProgressIndicator(),
-        ] else if (_period == SummaryPeriod.day) ...[
-          const SizedBox(height: 12),
-          _DayAiStatus(total: _ranges.length, generated: _summaries.length),
-        ] else ...[
-          const SizedBox(height: 12),
           for (final range in _ranges) ...[
-            _AggregateSummaryCard(
+            _SummaryRangeCard(
               range: range,
               summary: _summaries[range.key],
               busy: _busyKey == range.key || _busyKey == '__all__',
@@ -343,47 +310,182 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
   }
 }
 
-class _ModelTag extends StatelessWidget {
-  const _ModelTag({required this.label});
+class _ModelCard extends StatelessWidget {
+  const _ModelCard({
+    required this.model,
+    required this.loading,
+    required this.busy,
+    required this.copyProgress,
+    required this.onSelectModel,
+    required this.onUseBundledModel,
+  });
 
-  final String label;
+  final LocalAiModelInfo? model;
+  final bool loading;
+  final bool busy;
+  final double? copyProgress;
+  final VoidCallback onSelectModel;
+  final VoidCallback onUseBundledModel;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(999),
+    final scheme = Theme.of(context).colorScheme;
+    final description = loading && model == null
+        ? '正在准备 App 内置轻量模型…'
+        : model == null
+            ? '内置模型暂未就绪，可以选择自己的 GGUF。'
+            : '${model!.name} · ${_formatBytes(model!.byteSize)} · 完全本地运行';
+
+    return Card.filled(
+      color: scheme.surfaceContainerLow,
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        leading: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: scheme.primaryContainer,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(Icons.memory_rounded, color: scheme.primary),
+        ),
+        title: Row(
+          children: [
+            const Expanded(child: Text('本地模型')),
+            if (model != null)
+              _ModelTag(label: model!.isBundled ? '内置' : '自定义'),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: Text(
+            description,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '普通使用不需要设置。只有想更换模型时再打开这里。',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: busy ? null : onSelectModel,
+                icon: const Icon(Icons.folder_open_rounded),
+                label: const Text('选择自定义 GGUF'),
+              ),
+              if (model != null && !model!.isBundled)
+                FilledButton.tonalIcon(
+                  onPressed: busy ? null : onUseBundledModel,
+                  icon: const Icon(Icons.restore_rounded),
+                  label: const Text('恢复内置模型'),
+                ),
+            ],
+          ),
+          if (copyProgress != null) ...[
+            const SizedBox(height: 12),
+            LinearProgressIndicator(value: copyProgress),
+          ],
+        ],
       ),
-      child: Text(label, style: Theme.of(context).textTheme.labelMedium),
     );
   }
 }
 
-class _DayAiStatus extends StatelessWidget {
-  const _DayAiStatus({required this.total, required this.generated});
+class _ProgressCard extends StatelessWidget {
+  const _ProgressCard({
+    required this.period,
+    required this.total,
+    required this.generated,
+    required this.progress,
+    required this.busy,
+    required this.status,
+    required this.modelReady,
+    required this.onGenerateAll,
+  });
 
+  final SummaryPeriod period;
   final int total;
   final int generated;
+  final double progress;
+  final bool busy;
+  final String? status;
+  final bool modelReady;
+  final VoidCallback onGenerateAll;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final remaining = total - generated;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFF0DDDA)),
+        color: scheme.primaryContainer.withValues(alpha: 0.48),
+        borderRadius: BorderRadius.circular(24),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.today_rounded, size: 20),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '已生成 $generated / $total 天。生成完成后，「回忆」页的当天摘要会自动优先使用本地 AI 结果。',
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  total == 0
+                      ? '暂无可整理内容'
+                      : remaining == 0
+                          ? '${period.label}总结已整理完成'
+                          : '还有 $remaining 个${period.label}总结待整理',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+              Text('$generated / $total', style: Theme.of(context).textTheme.labelLarge),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: total == 0 ? 0 : progress,
+              minHeight: 7,
+              backgroundColor: scheme.surface.withValues(alpha: 0.68),
+            ),
+          ),
+          if (status != null) ...[
+            const SizedBox(height: 9),
+            Text(
+              status!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: modelReady && !busy && total > 0 ? onGenerateAll : null,
+              icon: busy
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome_rounded),
+              label: Text(
+                busy
+                    ? '正在整理…'
+                    : remaining > 0
+                        ? '继续整理'
+                        : '检查并更新',
+              ),
             ),
           ),
         ],
@@ -392,8 +494,8 @@ class _DayAiStatus extends StatelessWidget {
   }
 }
 
-class _AggregateSummaryCard extends StatelessWidget {
-  const _AggregateSummaryCard({
+class _SummaryRangeCard extends StatelessWidget {
+  const _SummaryRangeCard({
     required this.range,
     required this.summary,
     required this.busy,
@@ -407,8 +509,8 @@ class _AggregateSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
+    final scheme = Theme.of(context).colorScheme;
+    return Card.outlined(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -418,35 +520,108 @@ class _AggregateSummaryCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Text(
-                    range.label,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        range.label,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${range.dayCount} 天 · ${range.messageCount} 条聊天',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    '${range.dayCount} 天 · ${range.messageCount} 条聊天',
-                    textAlign: TextAlign.right,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
+                _StateBadge(done: summary != null),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              summary?.summaryText ?? '尚未生成本地 AI 总结。',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.5),
-            ),
             const SizedBox(height: 10),
+            Text(
+              summary?.summaryText ?? '还没有总结。可以单独生成这一段，不需要重新跑全部。',
+              maxLines: summary == null ? 2 : 5,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: summary == null ? scheme.onSurfaceVariant : scheme.onSurface,
+                    height: 1.5,
+                  ),
+            ),
+            const SizedBox(height: 12),
             Align(
               alignment: Alignment.centerRight,
               child: FilledButton.tonalIcon(
                 onPressed: busy ? null : onGenerate,
-                icon: const Icon(Icons.auto_awesome_rounded),
-                label: Text(summary == null ? '生成总结' : '重新总结'),
+                icon: Icon(summary == null ? Icons.auto_awesome_rounded : Icons.refresh_rounded),
+                label: Text(summary == null ? '生成' : '重新整理'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ModelTag extends StatelessWidget {
+  const _ModelTag({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(label, style: Theme.of(context).textTheme.labelMedium),
+    );
+  }
+}
+
+class _StateBadge extends StatelessWidget {
+  const _StateBadge({required this.done});
+  final bool done;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: done ? scheme.primaryContainer : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        done ? '已整理' : '待整理',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: done ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+      ),
+    );
+  }
+}
+
+class _NoRangeCard extends StatelessWidget {
+  const _NoRangeCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card.outlined(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            const Icon(Icons.inbox_outlined),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '当前没有可整理的聊天。先导入聊天档案，再回来生成回忆总结。',
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
           ],

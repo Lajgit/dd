@@ -6,6 +6,7 @@ class MemoryDaySummary {
     required this.selfMessageCount,
     required this.otherMessageCount,
     required this.mediaMessageCount,
+    this.activitySummary = '',
   });
 
   final String dateKey;
@@ -14,8 +15,13 @@ class MemoryDaySummary {
   final int selfMessageCount;
   final int otherMessageCount;
   final int mediaMessageCount;
+  final String activitySummary;
 
   String get summaryText {
+    if (activitySummary.trim().isNotEmpty) {
+      return activitySummary.trim();
+    }
+
     final buffer = StringBuffer('这一天留下了 $messageCount 条聊天');
     if (selfMessageCount > 0 || otherMessageCount > 0) {
       buffer.write('，你发了 $selfMessageCount 条，对方发了 $otherMessageCount 条');

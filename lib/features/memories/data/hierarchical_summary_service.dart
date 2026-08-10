@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'ai_summary_repository.dart';
 import 'local_ai_engine.dart';
 import 'local_ai_model_manager.dart';
@@ -143,46 +141,27 @@ class HierarchicalSummaryService {
     final chatText = messages.map(_messageLine).join('\n');
     final raw = await engine.complete(
       modelPath: model.path,
-      maxTokens: 760,
+      maxTokens: 520,
       systemPrompt: _systemPrompt,
       userPrompt: '''
 请整理 ${range.label} 的这一段情侣聊天。只依据输入，不要补充没有说过的事实。
 提取 0-4 个真正发生、计划或值得记住的事情，忽略“哈哈”“嗯嗯”等闲聊。
-message_ids 只能使用输入中出现的 id。
+消息编号只能使用输入中出现的 id。
 
-只输出 JSON：
-{"summary":"这一段发生了什么，1-3句","events":[{"title":"短标题","description":"发生了什么","message_ids":[1,2]}]}
+不要输出 JSON。严格使用下面的逐行格式：
+总结：这一段发生了什么，1-3句
+事件：短标题｜发生了什么｜1,2
+事件：短标题｜发生了什么｜3,4
+
+没有值得记录的事件时只输出“总结：...”。不要输出 Markdown、思考过程或额外解释。
 
 聊天：
 $chatText
 ''',
     );
-    final json = _decodeJsonObject(raw);
-    final summary = (json['summary'] as String?)?.trim() ?? '';
-    final events = <GeneratedAiEvent>[];
-    for (final value in (json['events'] as List<dynamic>? ?? const <dynamic>[])) {
-      if (value is! Map) continue;
-      final event = Map<String, dynamic>.from(value);
-      final title = (event['title'] as String?)?.trim() ?? '';
-      final description = (event['description'] as String?)?.trim() ?? '';
-      final ids = (event['message_ids'] as List<dynamic>? ?? const <dynamic>[])
-          .whereType<num>()
-          .map((value) => value.toInt())
-          .where(allowedIds.contains)
-          .toSet()
-          .toList(growable: false);
-      if (title.isEmpty || description.isEmpty || ids.isEmpty) continue;
-      events.add(
-        GeneratedAiEvent(
-          title: title,
-          description: description,
-          messageIds: ids,
-        ),
-      );
-    }
-    return GeneratedAiSummary(
-      summaryText: summary.isEmpty ? '这一段主要是日常交流。' : summary,
-      events: events,
+    return parseChunkSummaryOutput(
+      raw,
+      allowedMessageIds: allowedIds,
     );
   }
 
@@ -200,20 +179,20 @@ $chatText
     }).join('\n');
     final raw = await engine.complete(
       modelPath: model.path,
-      maxTokens: 520,
+      maxTokens: 420,
       systemPrompt: _systemPrompt,
       userPrompt: '''
 根据下面已经从真实聊天中提取的片段，写一段 ${range.label} 的情侣回忆总结。
 重点回答“今天做了什么、商量了什么、有什么值得记住的互动”。
 不要编造，不要写聊天条数，不要逐句复述，使用自然温暖的中文，80-180字。
-只输出 JSON：{"summary":"..."}
+不要输出 JSON。只输出一行：
+总结：你的总结正文
 
 $material
 ''',
     );
-    final json = _decodeJsonObject(raw);
-    final summary = (json['summary'] as String?)?.trim();
-    if (summary == null || summary.isEmpty) {
+    final summary = parseSingleSummaryOutput(raw);
+    if (summary.isEmpty) {
       throw const FormatException('本地模型没有返回有效的日总结');
     }
     return summary;
@@ -239,21 +218,21 @@ $material
     };
     final raw = await engine.complete(
       modelPath: model.path,
-      maxTokens: range.period == SummaryPeriod.year ? 820 : 620,
+      maxTokens: range.period == SummaryPeriod.year ? 760 : 560,
       systemPrompt: _systemPrompt,
       userPrompt: '''
 把下面更小时间单位的真实 AI 总结，合并成 ${range.label} 的回忆总结。
 重点概括：$target。
 只依据提供内容，不增加事实；不要逐条罗列；写成温暖但克制的中文叙述。
 ${range.period == SummaryPeriod.year ? '建议 220-450 字。' : '建议 120-260 字。'}
-只输出 JSON：{"summary":"..."}
+不要输出 JSON。只输出一行：
+总结：你的总结正文
 
 $material
 ''',
     );
-    final json = _decodeJsonObject(raw);
-    final summary = (json['summary'] as String?)?.trim();
-    if (summary == null || summary.isEmpty) {
+    final summary = parseSingleSummaryOutput(raw);
+    if (summary.isEmpty) {
       throw FormatException('本地模型没有返回有效的${range.period.label}总结');
     }
     return GeneratedAiSummary(summaryText: summary);
@@ -263,7 +242,7 @@ $material
 const _systemPrompt = '''
 你是“点滴记忆”的本地回忆整理器。所有输入都来自一对伴侣的真实聊天。
 你的任务是忠实归纳，不推测身份，不编造地点、关系、情绪或事件。
-如果证据不足就少写。输出必须严格遵守用户要求的 JSON 格式，不要输出思考过程、Markdown 或额外解释。
+如果证据不足就少写。严格遵守用户指定的逐行输出格式，不要自行改成 JSON，不要输出思考过程、Markdown 或额外解释。
 ''';
 
 List<List<AiTextMessage>> buildConversationChunks(
@@ -296,6 +275,111 @@ List<List<AiTextMessage>> buildConversationChunks(
   return chunks;
 }
 
+GeneratedAiSummary parseChunkSummaryOutput(
+  String raw, {
+  required Set<int> allowedMessageIds,
+}) {
+  final cleaned = _cleanModelText(raw);
+  final lines = cleaned
+      .split(RegExp(r'\r?\n'))
+      .map(_stripLeadingMarker)
+      .where((line) => line.isNotEmpty)
+      .toList(growable: false);
+
+  String? summary;
+  final events = <GeneratedAiEvent>[];
+  for (final line in lines) {
+    final summaryValue = _valueAfterLabel(line, const <String>['总结', '摘要']);
+    if (summaryValue != null && summaryValue.isNotEmpty) {
+      summary ??= summaryValue;
+      continue;
+    }
+
+    final eventValue = _valueAfterLabel(line, const <String>['事件']);
+    if (eventValue == null || eventValue.isEmpty) continue;
+    final parts = eventValue
+        .split(RegExp(r'[｜|]'))
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList(growable: false);
+    if (parts.length < 3) continue;
+
+    final title = parts.first;
+    final description = parts.sublist(1, parts.length - 1).join('｜');
+    final ids = RegExp(r'\d+')
+        .allMatches(parts.last)
+        .map((match) => int.parse(match.group(0)!))
+        .where(allowedMessageIds.contains)
+        .toSet()
+        .toList(growable: false);
+    if (title.isEmpty || description.isEmpty || ids.isEmpty) continue;
+    events.add(
+      GeneratedAiEvent(
+        title: title,
+        description: description,
+        messageIds: ids,
+      ),
+    );
+  }
+
+  summary ??= lines
+      .where((line) => _valueAfterLabel(line, const <String>['事件']) == null)
+      .cast<String?>()
+      .firstWhere((line) => line != null && line.isNotEmpty, orElse: () => null);
+
+  return GeneratedAiSummary(
+    summaryText: summary?.trim().isNotEmpty == true
+        ? summary!.trim()
+        : '这一段主要是日常交流。',
+    events: events.take(4).toList(growable: false),
+  );
+}
+
+String parseSingleSummaryOutput(String raw) {
+  final cleaned = _cleanModelText(raw);
+  final lines = cleaned
+      .split(RegExp(r'\r?\n'))
+      .map(_stripLeadingMarker)
+      .where((line) => line.isNotEmpty)
+      .toList(growable: false);
+  for (final line in lines) {
+    final value = _valueAfterLabel(line, const <String>['总结', '摘要']);
+    if (value != null && value.isNotEmpty) return value;
+  }
+  return lines.join(' ').trim();
+}
+
+String _cleanModelText(String raw) {
+  return raw
+      .replaceAll(
+        RegExp(r'<think>[\s\S]*?</think>', caseSensitive: false),
+        '',
+      )
+      .replaceAll(RegExp(r'```(?:json|text)?', caseSensitive: false), '')
+      .trim();
+}
+
+String _stripLeadingMarker(String value) {
+  return value
+      .trim()
+      .replaceFirst(RegExp(r'^[\s>*•·\-0-9.、)）]+'), '')
+      .trim();
+}
+
+String? _valueAfterLabel(String line, List<String> labels) {
+  for (final label in labels) {
+    final chinesePrefix = '$label：';
+    if (line.startsWith(chinesePrefix)) {
+      return line.substring(chinesePrefix.length).trim();
+    }
+    final asciiPrefix = '$label:';
+    if (line.startsWith(asciiPrefix)) {
+      return line.substring(asciiPrefix.length).trim();
+    }
+  }
+  return null;
+}
+
 String _messageLine(AiTextMessage message) {
   final time = DateTime.fromMillisecondsSinceEpoch(message.createTime * 1000);
   final hour = time.hour.toString().padLeft(2, '0');
@@ -314,21 +398,4 @@ String _modelCacheKey(LocalAiModelInfo model) => '${model.name}|${model.byteSize
 String _limit(String value, int maxLength) {
   if (value.length <= maxLength) return value;
   return '${value.substring(0, maxLength - 1)}…';
-}
-
-Map<String, dynamic> _decodeJsonObject(String raw) {
-  final withoutThinking = raw.replaceAll(
-    RegExp(r'<think>[\s\S]*?</think>', caseSensitive: false),
-    '',
-  );
-  final start = withoutThinking.indexOf('{');
-  final end = withoutThinking.lastIndexOf('}');
-  if (start < 0 || end <= start) {
-    throw const FormatException('本地模型返回内容不是 JSON');
-  }
-  final decoded = jsonDecode(withoutThinking.substring(start, end + 1));
-  if (decoded is! Map) {
-    throw const FormatException('本地模型返回 JSON 根节点不是对象');
-  }
-  return Map<String, dynamic>.from(decoded);
 }

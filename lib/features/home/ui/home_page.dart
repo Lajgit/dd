@@ -23,7 +23,11 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _selectedIndex = widget.initialIndex.clamp(0, 2);
+    _selectedIndex = widget.initialIndex < 0
+        ? 0
+        : widget.initialIndex > 2
+            ? 2
+            : widget.initialIndex;
   }
 
   void _handleImported() {

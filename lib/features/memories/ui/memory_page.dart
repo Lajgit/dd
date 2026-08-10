@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../data/memory_repository.dart';
 import '../model/memory_models.dart';
+import 'media_preview_page.dart';
 
 class MemoryPage extends StatefulWidget {
   const MemoryPage({
@@ -48,10 +49,7 @@ class _MemoryPageState extends State<MemoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('我们的点滴'),
-        centerTitle: false,
-      ),
+      appBar: AppBar(title: const Text('我们的点滴')),
       body: FutureBuilder<List<MemoryDaySummary>>(
         future: _summariesFuture,
         builder: (context, snapshot) {
@@ -91,7 +89,7 @@ class _MemoryPageState extends State<MemoryPage> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '当前小结来自本地消息统计；展开后会直接读取 SQLite 中的真实聊天记录。',
+                    '先从当天真实聊天里提取“做了什么”的日常片段；展开后可以逐条核对原始聊天与本地媒体。',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -126,10 +124,7 @@ class _MemoryHero extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            scheme.primaryContainer,
-            const Color(0xFFFFEDE7),
-          ],
+          colors: [scheme.primaryContainer, const Color(0xFFFFEDE7)],
         ),
         borderRadius: BorderRadius.circular(28),
       ),
@@ -184,16 +179,13 @@ class _EmptyMemoryCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: const Color(0xFFF1DAD7)),
       ),
-      child: Column(
+      child: const Column(
         children: [
-          const Icon(Icons.favorite_border_rounded, size: 42),
-          const SizedBox(height: 14),
+          Icon(Icons.favorite_border_rounded, size: 42),
+          SizedBox(height: 14),
+          Text('还没有回忆小结'),
+          SizedBox(height: 6),
           Text(
-            '还没有回忆小结',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 6),
-          const Text(
             '去「导入」页加入一份 WechatExplorer 聊天档案，完成后这里会按天整理。',
             textAlign: TextAlign.center,
           ),
@@ -204,10 +196,7 @@ class _EmptyMemoryCard extends StatelessWidget {
 }
 
 class _MemoryDayCard extends StatefulWidget {
-  const _MemoryDayCard({
-    required this.summary,
-    required this.repository,
-  });
+  const _MemoryDayCard({required this.summary, required this.repository});
 
   final MemoryDaySummary summary;
   final MemoryRepository repository;
@@ -264,33 +253,57 @@ class _MemoryDayCardState extends State<_MemoryDayCard> {
               ),
         ),
         subtitle: Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Text(
-            widget.summary.summaryText,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: scheme.onSurfaceVariant, height: 1.4),
+          padding: const EdgeInsets.only(top: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '当天发生的事',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                widget.summary.summaryText,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: scheme.onSurfaceVariant, height: 1.45),
+              ),
+            ],
           ),
         ),
         children: [
           const Divider(height: 18),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               _SoftTag(label: '${widget.summary.messageCount} 条聊天'),
-              const SizedBox(width: 8),
+              _SoftTag(
+                label:
+                    '你 ${widget.summary.selfMessageCount} · 对方 ${widget.summary.otherMessageCount}',
+              ),
               if (widget.summary.mediaMessageCount > 0)
                 _SoftTag(label: '${widget.summary.mediaMessageCount} 条媒体'),
-              const Spacer(),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(Icons.chat_bubble_outline_rounded, size: 18, color: scheme.primary),
+              const SizedBox(width: 6),
               Text(
-                '真实聊天',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                '真实聊天记录',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       color: scheme.primary,
                       fontWeight: FontWeight.w700,
                     ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           _MessageEvidenceList(future: _messagesFuture),
         ],
       ),
@@ -306,9 +319,7 @@ class _MessageEvidenceList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final messagesFuture = future;
-    if (messagesFuture == null) {
-      return const SizedBox.shrink();
-    }
+    if (messagesFuture == null) return const SizedBox.shrink();
 
     return FutureBuilder<List<MemoryChatMessage>>(
       future: messagesFuture,
@@ -335,7 +346,7 @@ class _MessageEvidenceList extends StatelessWidget {
         }
 
         return ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 520),
+          constraints: const BoxConstraints(maxHeight: 560),
           child: ListView.separated(
             shrinkWrap: true,
             itemCount: messages.length,
@@ -360,12 +371,7 @@ class _ChatBubble extends StatelessWidget {
     final background = isSelf
         ? scheme.primaryContainer.withValues(alpha: 0.72)
         : const Color(0xFFFFF8F4);
-    final mediaFile = message.mediaLocalPath == null
-        ? null
-        : File(message.mediaLocalPath!);
-    final showImage = mediaFile != null &&
-        mediaFile.existsSync() &&
-        _isImageMedia(message.mediaType);
+    final storedMedia = _storedMediaPreview(context, message);
 
     return Align(
       alignment: isSelf ? Alignment.centerRight : Alignment.centerLeft,
@@ -408,30 +414,154 @@ class _ChatBubble extends StatelessWidget {
                   ),
                 ],
               ),
-              if (showImage) ...[
+              if (storedMedia != null) ...[
                 const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: Image.file(
-                    mediaFile,
-                    height: 160,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                  ),
-                ),
+                storedMedia,
               ],
               const SizedBox(height: 6),
               Text(
                 _displayMessageContent(message),
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.45),
               ),
-              if (message.mediaType != null && !showImage) ...[
+              if (message.mediaType != null && storedMedia == null) ...[
                 const SizedBox(height: 7),
-                _MediaChip(
-                  type: message.mediaType!,
-                  name: message.mediaName,
-                ),
+                _MediaChip(type: message.mediaType!, name: message.mediaName),
               ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Widget? _storedMediaPreview(BuildContext context, MemoryChatMessage message) {
+  final localPath = message.mediaLocalPath;
+  if (localPath == null || localPath.trim().isEmpty) return null;
+  final file = File(localPath);
+  if (!file.existsSync()) return null;
+
+  if (_isImageMedia(message.mediaType, message.messageType)) {
+    return _ImageMessagePreview(
+      file: file,
+      title: message.mediaName,
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ImagePreviewPage(file: file, title: message.mediaName),
+          ),
+        );
+      },
+    );
+  }
+  if (_isVideoMedia(message.mediaType, message.messageType)) {
+    return _VideoMessagePreview(
+      title: message.mediaName,
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => VideoPreviewPage(file: file, title: message.mediaName),
+          ),
+        );
+      },
+    );
+  }
+  return null;
+}
+
+class _ImageMessagePreview extends StatelessWidget {
+  const _ImageMessagePreview({required this.file, required this.onTap, this.title});
+
+  final File file;
+  final VoidCallback onTap;
+  final String? title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              Image.file(
+                file,
+                height: 170,
+                width: 250,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+              Container(
+                margin: const EdgeInsets.all(8),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.48),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.zoom_out_map_rounded, size: 14, color: Colors.white),
+                    SizedBox(width: 4),
+                    Text('查看大图', style: TextStyle(color: Colors.white, fontSize: 12)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VideoMessagePreview extends StatelessWidget {
+  const _VideoMessagePreview({required this.onTap, this.title});
+
+  final VoidCallback onTap;
+  final String? title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          width: 250,
+          height: 138,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF704F58), Color(0xFF382B30)],
+            ),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 36),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                title?.trim().isNotEmpty == true ? title!.trim() : '点击播放视频',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white),
+              ),
             ],
           ),
         ),
@@ -479,10 +609,7 @@ class _SoftTag extends StatelessWidget {
         color: const Color(0xFFFFECE9),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelMedium,
-      ),
+      child: Text(label, style: Theme.of(context).textTheme.labelMedium),
     );
   }
 }
@@ -528,12 +655,17 @@ String _formatMessageTime(int? timestamp) {
   return '$hour:$minute';
 }
 
-bool _isImageMedia(String? type) {
-  final normalized = type?.toLowerCase() ?? '';
+bool _isImageMedia(String? mediaType, String? messageType) {
+  final normalized = '${mediaType ?? ''} ${messageType ?? ''}'.toLowerCase();
   return normalized.contains('image') ||
       normalized.contains('sticker') ||
       normalized.contains('图片') ||
       normalized.contains('表情');
+}
+
+bool _isVideoMedia(String? mediaType, String? messageType) {
+  final normalized = '${mediaType ?? ''} ${messageType ?? ''}'.toLowerCase();
+  return normalized.contains('video') || normalized.contains('视频');
 }
 
 String _displayMessageContent(MemoryChatMessage message) {

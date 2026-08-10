@@ -3,13 +3,18 @@ import 'package:flutter/material.dart';
 import 'local_ai_summary_panel.dart';
 
 class LocalAiSummaryPage extends StatelessWidget {
-  const LocalAiSummaryPage({super.key});
+  const LocalAiSummaryPage({
+    super.key,
+    this.onSummariesChanged,
+  });
+
+  final VoidCallback? onSummariesChanged;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('AI 回忆')), 
+      appBar: AppBar(title: const Text('AI 回忆')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
@@ -80,7 +85,9 @@ class LocalAiSummaryPage extends StatelessWidget {
                   ),
             ),
             const SizedBox(height: 12),
-            LocalAiSummaryPanel(onSummariesChanged: () {}),
+            LocalAiSummaryPanel(
+              onSummariesChanged: onSummariesChanged ?? () {},
+            ),
           ],
         ),
       ),

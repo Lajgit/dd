@@ -130,9 +130,10 @@ class LocalAiModelManager {
   }
 
   Future<LocalAiModelInfo> useBundledModel() async {
+    // 先确认内置模型可用，再清理自定义选择；失败时仍保留用户原来的模型。
+    final bundled = await bundledModel.ensureAvailable();
     final previous = await _currentCustomModel();
     await _clearCustomModelSettings();
-    final bundled = await bundledModel.ensureAvailable();
 
     final previousPath = previous?.path;
     if (previousPath != null && previousPath != bundled.path) {

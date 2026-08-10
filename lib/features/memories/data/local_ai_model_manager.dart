@@ -75,7 +75,8 @@ class LocalAiModelManager {
         sink.add(chunk);
         copiedBytes += chunk.length;
         if (totalBytes > 0) {
-          final percent = (copiedBytes * 100 ~/ totalBytes).clamp(0, 100);
+          var percent = copiedBytes * 100 ~/ totalBytes;
+          if (percent > 100) percent = 100;
           if (percent != lastReportedPercent) {
             lastReportedPercent = percent;
             onProgress?.call(percent / 100);

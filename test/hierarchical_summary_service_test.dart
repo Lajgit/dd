@@ -35,9 +35,9 @@ void main() {
     expect(chunks.last.single.id, 3);
   });
 
-  test('周月年周期存在逐级子周期', () {
+  test('周月年使用不会跨周期边界的下一级总结', () {
     expect(SummaryPeriod.week.child, SummaryPeriod.day);
-    expect(SummaryPeriod.month.child, SummaryPeriod.week);
+    expect(SummaryPeriod.month.child, SummaryPeriod.day);
     expect(SummaryPeriod.year.child, SummaryPeriod.month);
     expect(SummaryPeriod.day.child, isNull);
   });

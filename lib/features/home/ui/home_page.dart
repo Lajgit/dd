@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../import/ui/import_page.dart';
+import '../../import/ui/import_experience_page.dart';
 import '../../memories/ui/local_ai_summary_page.dart';
 import '../../memories/ui/memory_overview_page.dart';
 
@@ -45,7 +45,7 @@ class _HomePageState extends State<HomePage> {
     if (_pages[index] != null) return;
     _pages[index] = switch (index) {
       1 => LocalAiSummaryPage(onSummariesChanged: _handleSummariesChanged),
-      _ => ImportPage(
+      _ => ImportExperiencePage(
           onImported: _handleImported,
           onOpenMemories: _openMemories,
         ),

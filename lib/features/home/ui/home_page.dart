@@ -44,7 +44,7 @@ class _HomePageState extends State<HomePage> {
     }
     if (_pages[index] != null) return;
     _pages[index] = switch (index) {
-      1 => const LocalAiSummaryPage(),
+      1 => LocalAiSummaryPage(onSummariesChanged: _handleSummariesChanged),
       _ => ImportPage(
           onImported: _handleImported,
           onOpenMemories: _openMemories,
@@ -52,16 +52,22 @@ class _HomePageState extends State<HomePage> {
     };
   }
 
+  void _refreshMemories() {
+    _memoryRefreshToken += 1;
+    if (_pages[0] != null) _ensurePage(0);
+  }
+
   void _handleImported() {
-    setState(() {
-      _memoryRefreshToken += 1;
-      if (_pages[0] != null) _ensurePage(0);
-    });
+    setState(_refreshMemories);
+  }
+
+  void _handleSummariesChanged() {
+    setState(_refreshMemories);
   }
 
   void _openMemories() {
     setState(() {
-      _memoryRefreshToken += 1;
+      _refreshMemories();
       _selectedIndex = 0;
       _ensurePage(0);
     });
@@ -84,9 +90,6 @@ class _HomePageState extends State<HomePage> {
   void _selectTab(int index) {
     setState(() {
       _selectedIndex = index;
-      if (index == 0) {
-        _memoryRefreshToken += 1;
-      }
       _ensurePage(index);
     });
   }

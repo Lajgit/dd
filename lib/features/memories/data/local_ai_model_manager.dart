@@ -5,10 +5,12 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../../core/database/app_database.dart';
 import '../model/ai_summary_models.dart';
+import 'bundled_local_ai_model.dart';
 
 class LocalAiModelManager {
   const LocalAiModelManager({
     this.database = AppDatabase.instance,
+    this.bundledModel = const BundledLocalAiModel(),
   });
 
   static const _modelPathKey = 'local_ai_model_path';
@@ -16,8 +18,17 @@ class LocalAiModelManager {
   static const _modelSizeKey = 'local_ai_model_size';
 
   final AppDatabase database;
+  final BundledLocalAiModel bundledModel;
 
   Future<LocalAiModelInfo?> currentModel() async {
+    final custom = await _currentCustomModel();
+    if (custom != null) return custom;
+
+    // 没有自定义模型时自动准备随 APK 打包的轻量模型，用户无需额外下载 GGUF。
+    return bundledModel.ensureAvailable();
+  }
+
+  Future<LocalAiModelInfo?> _currentCustomModel() async {
     final db = await database.database;
     final rows = await db.query(
       'app_settings',
@@ -29,13 +40,16 @@ class LocalAiModelManager {
       for (final row in rows) row['key']! as String: row['value']! as String,
     };
     final modelPath = values[_modelPathKey];
-    if (modelPath == null || !File(modelPath).existsSync()) {
+    if (modelPath == null) return null;
+    if (!File(modelPath).existsSync()) {
+      await _clearCustomModelSettings();
       return null;
     }
     return LocalAiModelInfo(
       path: modelPath,
       name: values[_modelNameKey] ?? path.basename(modelPath),
-      byteSize: int.tryParse(values[_modelSizeKey] ?? '') ?? File(modelPath).lengthSync(),
+      byteSize:
+          int.tryParse(values[_modelSizeKey] ?? '') ?? File(modelPath).lengthSync(),
     );
   }
 
@@ -51,7 +65,7 @@ class LocalAiModelManager {
       throw const FormatException('请选择 .gguf 本地模型文件');
     }
 
-    final previous = await currentModel();
+    final previous = await _currentCustomModel();
     final totalBytes = source.lengthSync();
     final modified = source.lastModifiedSync().millisecondsSinceEpoch;
     final storageRoot = await database.storageRootPath();
@@ -109,10 +123,27 @@ class LocalAiModelManager {
         final previousFile = File(previousPath);
         if (previousFile.existsSync()) previousFile.deleteSync();
       } catch (_) {
-        // 旧模型可能仍被 native mmap 使用；删除失败不影响新模型启用，下次可继续覆盖。
+        // 旧自定义模型可能仍被 native mmap 使用；删除失败不影响新模型启用。
       }
     }
     return info;
+  }
+
+  Future<LocalAiModelInfo> useBundledModel() async {
+    final previous = await _currentCustomModel();
+    await _clearCustomModelSettings();
+    final bundled = await bundledModel.ensureAvailable();
+
+    final previousPath = previous?.path;
+    if (previousPath != null && previousPath != bundled.path) {
+      try {
+        final previousFile = File(previousPath);
+        if (previousFile.existsSync()) previousFile.deleteSync();
+      } catch (_) {
+        // 切回内置模型时，旧自定义模型删除失败不影响当前模型选择。
+      }
+    }
+    return bundled;
   }
 
   Future<void> _saveModelInfo(LocalAiModelInfo info) async {
@@ -123,6 +154,15 @@ class LocalAiModelManager {
       await _upsertSetting(transaction, _modelNameKey, info.name, now);
       await _upsertSetting(transaction, _modelSizeKey, '${info.byteSize}', now);
     });
+  }
+
+  Future<void> _clearCustomModelSettings() async {
+    final db = await database.database;
+    await db.delete(
+      'app_settings',
+      where: 'key IN (?, ?, ?)',
+      whereArgs: const <Object?>[_modelPathKey, _modelNameKey, _modelSizeKey],
+    );
   }
 
   Future<void> _upsertSetting(

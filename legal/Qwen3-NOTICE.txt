@@ -1,0 +1,9 @@
+Bundled local model notice
+
+Model: Qwen3-0.6B-GGUF / Qwen3-0.6B-Q4_K_M.gguf
+Upstream: Qwen/Qwen3-0.6B-GGUF
+Pinned revision: 1208e45d782fe18602c5eaf10e5758d5b0f24c03
+SHA-256: b0638f08417a2d3c8652760462eb5407c6e30173cf9608ad0820757a281eea0e
+License: Apache License 2.0
+
+The model is downloaded at build time from the upstream Qwen repository and packaged into the Android APK. Chat data is not sent to the model publisher; inference runs locally on the Android device.

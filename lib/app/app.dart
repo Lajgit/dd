@@ -32,7 +32,8 @@ class DiandiMemoryApp extends StatelessWidget {
         ),
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(50),
+            // 只约束按钮高度，不把全局最小宽度设为 Infinity；否则按钮放进 Row 时会触发布局异常。
+            minimumSize: const Size(0, 50),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(18),
             ),

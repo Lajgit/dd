@@ -8,6 +8,7 @@ void main() {
     expect(find.text('导入微信聊天档案'), findsOneWidget);
     expect(find.text('选择 ZIP 文件'), findsOneWidget);
     expect(find.text('回忆'), findsOneWidget);
+    expect(find.text('AI总结'), findsOneWidget);
     expect(find.text('导入'), findsOneWidget);
   });
 }

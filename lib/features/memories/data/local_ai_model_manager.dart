@@ -68,12 +68,19 @@ class LocalAiModelManager {
     final sink = tempFile.openWrite();
     var copiedBytes = 0;
     var sinkClosed = false;
+    var lastReportedPercent = -1;
     try {
       // 大模型按块复制到 App 私有目录，避免 1GB 级 GGUF 整体进入 Dart 内存。
       await for (final chunk in source.openRead()) {
         sink.add(chunk);
         copiedBytes += chunk.length;
-        if (totalBytes > 0) onProgress?.call(copiedBytes / totalBytes);
+        if (totalBytes > 0) {
+          final percent = (copiedBytes * 100 ~/ totalBytes).clamp(0, 100);
+          if (percent != lastReportedPercent) {
+            lastReportedPercent = percent;
+            onProgress?.call(percent / 100);
+          }
+        }
       }
       await sink.flush();
       await sink.close();

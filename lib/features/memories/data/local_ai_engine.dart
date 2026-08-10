@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:llama_flutter_android/llama_flutter_android.dart';
 
 import '../../../core/async/serial_task_queue.dart';
@@ -82,7 +84,10 @@ class LocalAiEngine {
     )) {
       buffer.write(token);
     }
-    return buffer.toString().trim();
+
+    // 0.6B 级小模型偶尔会在正确 JSON 后多输出一个 ]/}，或留下尾随逗号。
+    // 这里仅修复结构性噪声，不改写 summary/events 的语义内容。
+    return normalizeLocalAiJsonOutput(buffer.toString());
   }
 
   Future<void> _recoverIdleController(LlamaController controller) async {
@@ -110,5 +115,125 @@ class LocalAiEngine {
     _controller = null;
     _loadedModelPath = null;
     await controller?.dispose();
+  }
+}
+
+String normalizeLocalAiJsonOutput(String raw) {
+  var cleaned = raw
+      .replaceAll(
+        RegExp(r'<think>[\s\S]*?</think>', caseSensitive: false),
+        '',
+      )
+      .replaceAll(RegExp(r'```(?:json)?', caseSensitive: false), '')
+      .trim();
+  final start = cleaned.indexOf('{');
+  if (start < 0) return cleaned;
+
+  final balanced = _firstBalancedJsonObject(cleaned, start);
+  final lastBrace = cleaned.lastIndexOf('}');
+  final candidates = <String>{
+    if (balanced != null) balanced,
+    if (lastBrace > start) cleaned.substring(start, lastBrace + 1),
+  };
+
+  for (final candidate in candidates) {
+    final normalized = _removeTrailingJsonCommas(candidate);
+    if (_isJsonObject(normalized)) return normalized;
+
+    final repaired = _removeTrailingJsonCommas(
+      _repairJsonDelimiters(normalized),
+    );
+    if (_isJsonObject(repaired)) return repaired;
+  }
+
+  return cleaned;
+}
+
+String? _firstBalancedJsonObject(String text, int start) {
+  var depth = 0;
+  var inString = false;
+  var escaped = false;
+  for (var index = start; index < text.length; index += 1) {
+    final char = text[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char == r'\') {
+        escaped = true;
+      } else if (char == '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char == '"') {
+      inString = true;
+    } else if (char == '{') {
+      depth += 1;
+    } else if (char == '}') {
+      depth -= 1;
+      if (depth == 0) return text.substring(start, index + 1);
+      if (depth < 0) return null;
+    }
+  }
+  return null;
+}
+
+String _removeTrailingJsonCommas(String value) {
+  return value.replaceAll(RegExp(r',\s*([}\]])'), r'$1');
+}
+
+String _repairJsonDelimiters(String value) {
+  final output = StringBuffer();
+  final stack = <String>[];
+  var inString = false;
+  var escaped = false;
+
+  for (var index = 0; index < value.length; index += 1) {
+    final char = value[index];
+    if (inString) {
+      output.write(char);
+      if (escaped) {
+        escaped = false;
+      } else if (char == r'\') {
+        escaped = true;
+      } else if (char == '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char == '"') {
+      inString = true;
+      output.write(char);
+      continue;
+    }
+    if (char == '{' || char == '[') {
+      stack.add(char);
+      output.write(char);
+      continue;
+    }
+    if (char == '}' || char == ']') {
+      final expected = char == '}' ? '{' : '[';
+      if (stack.isNotEmpty && stack.last == expected) {
+        stack.removeLast();
+        output.write(char);
+      }
+      continue;
+    }
+    output.write(char);
+  }
+
+  while (stack.isNotEmpty) {
+    output.write(stack.removeLast() == '{' ? '}' : ']');
+  }
+  return output.toString();
+}
+
+bool _isJsonObject(String value) {
+  try {
+    return jsonDecode(value) is Map;
+  } catch (_) {
+    return false;
   }
 }

@@ -41,4 +41,11 @@ void main() {
     expect(SummaryPeriod.year.child, SummaryPeriod.month);
     expect(SummaryPeriod.day.child, isNull);
   });
+
+  test('轻量模型输出上限保持在移动端快速总结预算内', () {
+    expect(localAiChunkMaxTokens, lessThanOrEqualTo(300));
+    expect(localAiDayMaxTokens, lessThanOrEqualTo(240));
+    expect(localAiAggregateMaxTokens, lessThanOrEqualTo(360));
+    expect(localAiYearMaxTokens, lessThanOrEqualTo(520));
+  });
 }

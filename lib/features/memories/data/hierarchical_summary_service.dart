@@ -3,6 +3,11 @@ import 'local_ai_engine.dart';
 import 'local_ai_model_manager.dart';
 import '../model/ai_summary_models.dart';
 
+const localAiChunkMaxTokens = 300;
+const localAiDayMaxTokens = 240;
+const localAiAggregateMaxTokens = 360;
+const localAiYearMaxTokens = 520;
+
 class HierarchicalSummaryService {
   HierarchicalSummaryService({
     AiSummaryRepository? repository,
@@ -141,7 +146,7 @@ class HierarchicalSummaryService {
     final chatText = messages.map(_messageLine).join('\n');
     final raw = await engine.complete(
       modelPath: model.path,
-      maxTokens: 520,
+      maxTokens: localAiChunkMaxTokens,
       systemPrompt: _systemPrompt,
       userPrompt: '''
 请整理 ${range.label} 的这一段情侣聊天。只依据输入，不要补充没有说过的事实。
@@ -157,6 +162,8 @@ class HierarchicalSummaryService {
 
 聊天：
 $chatText
+
+/no_think
 ''',
     );
     return parseChunkSummaryOutput(
@@ -179,7 +186,7 @@ $chatText
     }).join('\n');
     final raw = await engine.complete(
       modelPath: model.path,
-      maxTokens: 420,
+      maxTokens: localAiDayMaxTokens,
       systemPrompt: _systemPrompt,
       userPrompt: '''
 根据下面已经从真实聊天中提取的片段，写一段 ${range.label} 的情侣回忆总结。
@@ -189,6 +196,8 @@ $chatText
 总结：你的总结正文
 
 $material
+
+/no_think
 ''',
     );
     final summary = parseSingleSummaryOutput(raw);
@@ -218,7 +227,9 @@ $material
     };
     final raw = await engine.complete(
       modelPath: model.path,
-      maxTokens: range.period == SummaryPeriod.year ? 760 : 560,
+      maxTokens: range.period == SummaryPeriod.year
+          ? localAiYearMaxTokens
+          : localAiAggregateMaxTokens,
       systemPrompt: _systemPrompt,
       userPrompt: '''
 把下面更小时间单位的真实 AI 总结，合并成 ${range.label} 的回忆总结。
@@ -229,6 +240,8 @@ ${range.period == SummaryPeriod.year ? '建议 220-450 字。' : '建议 120-260
 总结：你的总结正文
 
 $material
+
+/no_think
 ''',
     );
     final summary = parseSingleSummaryOutput(raw);

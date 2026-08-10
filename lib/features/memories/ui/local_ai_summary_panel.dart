@@ -35,6 +35,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
   String? _error;
   double? _modelCopyProgress;
   bool _loading = true;
+  bool _showAllRanges = false;
 
   @override
   void initState() {
@@ -190,6 +191,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
     if (_busyKey != null || _period == period) return;
     setState(() {
       _period = period;
+      _showAllRanges = false;
       _status = null;
       _error = null;
     });
@@ -203,6 +205,9 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
     final generated = _ranges.where((range) => _summaries.containsKey(range.key)).length;
     final pending = _ranges.length - generated;
     final progress = _ranges.isEmpty ? 0.0 : generated / _ranges.length;
+    final visibleRanges = _showAllRanges
+        ? _ranges
+        : _ranges.take(12).toList(growable: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -240,7 +245,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
           total: _ranges.length,
           generated: generated,
           progress: progress,
-          busy: _busyKey == '__all__',
+          busy: _busyKey != null,
           status: _status,
           modelReady: model != null,
           onGenerateAll: _generateAll,
@@ -295,7 +300,7 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
             ],
           ),
           const SizedBox(height: 10),
-          for (final range in _ranges) ...[
+          for (final range in visibleRanges) ...[
             _SummaryRangeCard(
               range: range,
               summary: _summaries[range.key],
@@ -304,6 +309,21 @@ class _LocalAiSummaryPanelState extends State<LocalAiSummaryPanel> {
             ),
             const SizedBox(height: 10),
           ],
+          if (_ranges.length > 12)
+            Align(
+              alignment: Alignment.center,
+              child: TextButton.icon(
+                onPressed: _busyKey == null
+                    ? () => setState(() => _showAllRanges = !_showAllRanges)
+                    : null,
+                icon: Icon(_showAllRanges ? Icons.expand_less_rounded : Icons.expand_more_rounded),
+                label: Text(
+                  _showAllRanges
+                      ? '收起'
+                      : '查看其余 ${_ranges.length - visibleRanges.length} 个',
+                ),
+              ),
+            ),
         ],
       ],
     );
@@ -353,17 +373,12 @@ class _ModelCard extends StatelessWidget {
         title: Row(
           children: [
             const Expanded(child: Text('本地模型')),
-            if (model != null)
-              _ModelTag(label: model!.isBundled ? '内置' : '自定义'),
+            if (model != null) _ModelTag(label: model!.isBundled ? '内置' : '自定义'),
           ],
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 3),
-          child: Text(
-            description,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
+          child: Text(description, maxLines: 2, overflow: TextOverflow.ellipsis),
         ),
         children: [
           Align(

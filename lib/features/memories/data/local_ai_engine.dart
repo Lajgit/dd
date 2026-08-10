@@ -119,7 +119,7 @@ class LocalAiEngine {
 }
 
 String normalizeLocalAiJsonOutput(String raw) {
-  var cleaned = raw
+  final cleaned = raw
       .replaceAll(
         RegExp(r'<think>[\s\S]*?</think>', caseSensitive: false),
         '',
@@ -158,7 +158,7 @@ String? _firstBalancedJsonObject(String text, int start) {
     if (inString) {
       if (escaped) {
         escaped = false;
-      } else if (char == r'\') {
+      } else if (char == '\\') {
         escaped = true;
       } else if (char == '"') {
         inString = false;
@@ -180,7 +180,10 @@ String? _firstBalancedJsonObject(String text, int start) {
 }
 
 String _removeTrailingJsonCommas(String value) {
-  return value.replaceAll(RegExp(r',\s*([}\]])'), r'$1');
+  return value.replaceAllMapped(
+    RegExp(r',\s*([}\]])'),
+    (match) => match.group(1)!,
+  );
 }
 
 String _repairJsonDelimiters(String value) {
@@ -195,7 +198,7 @@ String _repairJsonDelimiters(String value) {
       output.write(char);
       if (escaped) {
         escaped = false;
-      } else if (char == r'\') {
+      } else if (char == '\\') {
         escaped = true;
       } else if (char == '"') {
         inString = false;

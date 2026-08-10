@@ -76,11 +76,13 @@ class LocalAiModelInfo {
     required this.path,
     required this.name,
     required this.byteSize,
+    this.isBundled = false,
   });
 
   final String path;
   final String name;
   final int byteSize;
+  final bool isBundled;
 }
 
 class AiTextMessage {

@@ -21,7 +21,6 @@ Then close and reopen PowerShell, return to the repository, and run:
   powershell -ExecutionPolicy Bypass -File .\tool\bootstrap_android.ps1
 "@
 }
-}
 
 function Invoke-Flutter {
     param(

@@ -3,10 +3,14 @@ import 'package:diandi_memory/features/memories/model/ai_summary_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('内置轻量模型使用固定 GGUF 文件和 SHA-256', () {
-    expect(BundledLocalAiModel.fileName, endsWith('.gguf'));
+  test('内置默认模型固定为 Qwen3 4B Q5 GGUF 和 SHA-256', () {
+    expect(BundledLocalAiModel.fileName, 'qwen3-4b-q5_k_m-aca59686.gguf');
     expect(BundledLocalAiModel.assetPath, contains(BundledLocalAiModel.fileName));
-    expect(BundledLocalAiModel.sha256, hasLength(64));
+    expect(BundledLocalAiModel.displayName, 'Qwen3-4B-Q5_K_M');
+    expect(
+      BundledLocalAiModel.sha256,
+      'aca596860e8cb40af6539e3f2ea40df305f42515deac56d49c08d39a02e6533f',
+    );
   });
 
   test('LocalAiModelInfo 可区分内置与自定义模型', () {

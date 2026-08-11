@@ -9,11 +9,11 @@ class BundledLocalAiModel {
     'com.lajgit.diandi_memory/local_ai_assets',
   );
 
-  static const assetPath = 'models/qwen3-0.6b-q4_k_m-b0638f08.gguf';
-  static const fileName = 'qwen3-0.6b-q4_k_m-b0638f08.gguf';
-  static const displayName = 'Qwen3-0.6B-Q4_K_M';
+  static const assetPath = 'models/qwen3-4b-q5_k_m-aca59686.gguf';
+  static const fileName = 'qwen3-4b-q5_k_m-aca59686.gguf';
+  static const displayName = 'Qwen3-4B-Q5_K_M';
   static const sha256 =
-      'b0638f08417a2d3c8652760462eb5407c6e30173cf9608ad0820757a281eea0e';
+      'aca596860e8cb40af6539e3f2ea40df305f42515deac56d49c08d39a02e6533f';
 
   Future<LocalAiModelInfo> ensureAvailable() async {
     final result = await _channel.invokeMapMethod<String, dynamic>(

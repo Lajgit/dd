@@ -39,7 +39,7 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        // 397 MB GGUF 解压和校验放到后台线程，不能阻塞 Android/Flutter 主线程。
+        // Multi-GB GGUF extraction and verification must stay off the Android/Flutter main thread.
         Thread({
             try {
                 val payload = synchronized(bundledModelLock) {
@@ -68,11 +68,13 @@ class MainActivity : FlutterActivity() {
         val marker = File(modelDirectory, "$targetFileName.sha256")
 
         if (target.exists() && marker.exists() && marker.readText().trim() == expectedSha256) {
+            cleanupOldBundledModels(modelDirectory, targetFileName)
             return modelPayload(target, expectedSha256)
         }
 
         if (target.exists() && sha256(target) == expectedSha256) {
             marker.writeText(expectedSha256)
+            cleanupOldBundledModels(modelDirectory, targetFileName)
             return modelPayload(target, expectedSha256)
         }
 
@@ -110,7 +112,20 @@ class MainActivity : FlutterActivity() {
             temp.delete()
         }
         marker.writeText(expectedSha256)
+        cleanupOldBundledModels(modelDirectory, targetFileName)
         return modelPayload(target, expectedSha256)
+    }
+
+    private fun cleanupOldBundledModels(modelDirectory: File, activeFileName: String) {
+        // Bundled Qwen upgrades use qwen3-* filenames. Custom user models use local_summary_* and must never be removed here.
+        modelDirectory.listFiles()?.forEach { file ->
+            val name = file.name
+            val isOldBundled = name.startsWith("qwen3-") &&
+                name != activeFileName &&
+                name != "$activeFileName.sha256" &&
+                name != "$activeFileName.part"
+            if (isOldBundled) file.delete()
+        }
     }
 
     private fun modelPayload(target: File, sha256: String): Map<String, Any> = hashMapOf(

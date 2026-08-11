@@ -679,8 +679,9 @@ class _ErrorCard extends StatelessWidget {
   }
 }
 
-String _formatDate(DateTime date) {
-  final local = date.toLocal();
+String _formatDate(int timestamp) {
+  // WechatExplorer 的 createTime 使用 Unix 秒；UI 展示前转换为本地 DateTime。
+  final local = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000).toLocal();
   final month = local.month.toString().padLeft(2, '0');
   final day = local.day.toString().padLeft(2, '0');
   return '${local.year}-$month-$day';

@@ -103,9 +103,9 @@ function Get-Sha256Lower {
 }
 
 function Prepare-BundledLocalAiModel {
-    $modelFileName = "qwen3-0.6b-q4_k_m-b0638f08.gguf"
-    $expectedSha256 = "b0638f08417a2d3c8652760462eb5407c6e30173cf9608ad0820757a281eea0e"
-    $modelUrl = "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/1208e45d782fe18602c5eaf10e5758d5b0f24c03/Qwen3-0.6B-Q4_K_M.gguf?download=true"
+    $modelFileName = "qwen3-4b-q5_k_m-aca59686.gguf"
+    $expectedSha256 = "aca596860e8cb40af6539e3f2ea40df305f42515deac56d49c08d39a02e6533f"
+    $modelUrl = "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/a9a60d009fa7ff9606305047c2bf77ac25dbec49/Qwen3-4B-Q5_K_M.gguf?download=true"
 
     $dartModelConfigPath = Join-Path (Get-Location) "lib\features\memories\data\bundled_local_ai_model.dart"
     $dartModelConfig = Get-Content -Path $dartModelConfigPath -Raw
@@ -136,7 +136,7 @@ function Prepare-BundledLocalAiModel {
             Remove-Item -Force $tempPath
         }
 
-        Write-Host "Downloading bundled Qwen3 0.6B Q4_K_M model (about 397 MB)..."
+        Write-Host "Downloading bundled Qwen3 4B Q5_K_M model (about 2.89 GB)..."
         $previousProgressPreference = $ProgressPreference
         $ProgressPreference = "SilentlyContinue"
         try {
@@ -162,7 +162,7 @@ function Prepare-BundledLocalAiModel {
         Remove-Item -Force $assetModelPath
     }
 
-    # Prefer a hard link so the developer machine does not keep another 397 MB copy before packaging.
+    # Prefer a hard link so the developer machine does not keep another multi-GB copy before packaging.
     try {
         New-Item -ItemType HardLink -Path $assetModelPath -Target $cachePath -ErrorAction Stop | Out-Null
         Write-Host "Linked verified bundled AI model into Android assets."
